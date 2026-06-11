@@ -1,0 +1,349 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AnkiTube Player</title>
+    <style>
+        html, body {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            background: #0f0f0f;
+            overflow: hidden;
+            position: relative;
+        }
+        #placeholder, #player {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+        }
+        #placeholder {
+            color: #aaa;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+            font-size: 14px;
+            text-align: center;
+            padding: 16px;
+            box-sizing: border-box;
+            z-index: 1;
+        }
+        #player {
+            display: none;
+            z-index: 2;
+        }
+        #player iframe {
+            width: 100%;
+            height: 100%;
+            border: 0;
+        }
+    </style>
+</head>
+<body>
+    <div id="placeholder">Add a YouTube video to the queue to begin.</div>
+    <div id="player"></div>
+    <script>
+        const CMD_PREFIX = "ankittube:";
+        let player = null;
+        let currentVideoId = null;
+        let pendingPlay = false;
+        let pendingSeekSeconds = 0;
+        let apiReady = false;
+
+        function send(cmd) {
+            if (typeof pycmd !== "function") {
+                return false;
+            }
+            pycmd(CMD_PREFIX + cmd);
+            return true;
+        }
+
+        function sendWhenReady(cmd, attempt) {
+            if (send(cmd)) {
+                return;
+            }
+            if (attempt >= 200) {
+                return;
+            }
+            window.setTimeout(function () {
+                sendWhenReady(cmd, attempt + 1);
+            }, 50);
+        }
+
+        function showPlaceholder(message) {
+            const placeholder = document.getElementById("placeholder");
+            placeholder.textContent = message;
+            placeholder.style.display = "flex";
+            document.getElementById("player").style.display = "none";
+        }
+
+        function hidePlaceholder() {
+            document.getElementById("placeholder").style.display = "none";
+            document.getElementById("player").style.display = "block";
+        }
+
+        function getOrigin() {
+            return window.location.origin || "http://127.0.0.1";
+        }
+
+        function getUrlFlag(name, defaultValue) {
+            const value = new URLSearchParams(window.location.search).get(name);
+            if (value === "0") {
+                return 0;
+            }
+            if (value === "1") {
+                return 1;
+            }
+            return defaultValue;
+        }
+
+        function getPlayerVars() {
+            return {
+                autoplay: 0,
+                rel: 0,
+                modestbranding: 1,
+                playsinline: 1,
+                disablekb: 1,
+                controls: getUrlFlag("controls", 1),
+                fs: getUrlFlag("fs", 1),
+                origin: getOrigin(),
+            };
+        }
+
+        function markApiReady() {
+            if (apiReady) {
+                return;
+            }
+            apiReady = true;
+            sendWhenReady("ready", 0);
+            if (currentVideoId) {
+                ensurePlayer(currentVideoId, false);
+                if (pendingPlay && player && player.playVideo) {
+                    player.playVideo();
+                }
+            }
+        }
+
+        function loadYouTubeApi() {
+            if (window.YT && window.YT.Player) {
+                markApiReady();
+                return;
+            }
+
+            const tag = document.createElement("script");
+            tag.src = "https://www.youtube.com/iframe_api";
+            tag.onerror = function () {
+                sendWhenReady("error:api_load", 0);
+                showPlaceholder("Could not load the YouTube player API.");
+            };
+            document.head.appendChild(tag);
+
+            window.onYouTubeIframeAPIReady = function () {
+                markApiReady();
+            };
+
+            window.setTimeout(function () {
+                if (!apiReady) {
+                    sendWhenReady("error:api_timeout", 0);
+                    showPlaceholder("YouTube player timed out while loading.");
+                }
+            }, 15000);
+        }
+
+        function ensurePlayer(videoId, forceReload) {
+            if (!apiReady || !videoId) {
+                return false;
+            }
+
+            hidePlaceholder();
+
+            if (player) {
+                if (forceReload || currentVideoId !== videoId) {
+                    currentVideoId = videoId;
+                    player.loadVideoById(videoId);
+                } else {
+                    applyPendingSeek();
+                }
+                return true;
+            }
+
+            currentVideoId = videoId;
+
+            player = new YT.Player("player", {
+                videoId: videoId,
+                width: "100%",
+                height: "100%",
+                playerVars: getPlayerVars(),
+                events: {
+                    onReady: onPlayerReady,
+                    onStateChange: onPlayerStateChange,
+                    onError: onPlayerError,
+                },
+            });
+            return true;
+        }
+
+        function applyPendingSeek() {
+            if (pendingSeekSeconds > 0 && player && player.seekTo) {
+                player.seekTo(pendingSeekSeconds, true);
+                pendingSeekSeconds = 0;
+            }
+        }
+
+        function onPlayerReady() {
+            applyPendingSeek();
+            sendWhenReady("player_ready", 0);
+            if (pendingPlay) {
+                pendingPlay = false;
+                player.playVideo();
+            }
+        }
+
+        function onPlayerStateChange(event) {
+            sendWhenReady("state:" + event.data, 0);
+            if (
+                player &&
+                player.getCurrentTime &&
+                (event.data === YT.PlayerState.PAUSED ||
+                    event.data === YT.PlayerState.ENDED)
+            ) {
+                sendWhenReady("position:" + player.getCurrentTime(), 0);
+            }
+            if (event.data === YT.PlayerState.ENDED) {
+                sendWhenReady("ended", 0);
+            }
+        }
+
+        function onPlayerError(event) {
+            sendWhenReady("error:player:" + (event ? event.data : "unknown"), 0);
+            showPlaceholder("Could not play this video.");
+        }
+
+        window.ankittube = {
+            loadVideo(videoId, startSeconds) {
+                pendingPlay = false;
+                pendingSeekSeconds = startSeconds || 0;
+                ensurePlayer(videoId, false);
+            },
+            loadAndPlay(videoId, startSeconds) {
+                pendingPlay = true;
+                pendingSeekSeconds = startSeconds || 0;
+                if (!ensurePlayer(videoId, true)) {
+                    return;
+                }
+                if (player && player.playVideo) {
+                    player.playVideo();
+                }
+            },
+            resumeOrPlay(videoId) {
+                pendingPlay = true;
+                if (!ensurePlayer(videoId, false)) {
+                    return;
+                }
+                if (player && player.playVideo) {
+                    player.playVideo();
+                }
+            },
+            getCurrentTime() {
+                if (player && player.getCurrentTime) {
+                    return player.getCurrentTime();
+                }
+                return 0;
+            },
+            getDuration() {
+                if (player && player.getDuration) {
+                    return player.getDuration();
+                }
+                return 0;
+            },
+            seekTo(seconds) {
+                if (player && player.seekTo) {
+                    player.seekTo(seconds, true);
+                }
+            },
+            seekBy(deltaSeconds) {
+                if (!player || !player.getCurrentTime || !player.seekTo) {
+                    return;
+                }
+                const duration = player.getDuration() || 0;
+                const next = Math.max(
+                    0,
+                    Math.min(duration || player.getCurrentTime() + deltaSeconds, player.getCurrentTime() + deltaSeconds)
+                );
+                player.seekTo(next, true);
+            },
+            adjustVolume(delta) {
+                if (!player || !player.getVolume || !player.setVolume) {
+                    return;
+                }
+                const volume = Math.max(0, Math.min(100, player.getVolume() + delta));
+                player.setVolume(volume);
+            },
+            toggleCaptions() {
+                if (!player || !player.loadModule || !player.getOption || !player.setOption) {
+                    return false;
+                }
+                player.loadModule("captions");
+                const current = player.getOption("captions", "track");
+                if (current && current.languageCode) {
+                    player.setOption("captions", "track", {});
+                    return false;
+                }
+                const tracks = player.getOption("captions", "tracklist");
+                if (tracks && tracks.length > 0) {
+                    player.setOption("captions", "track", tracks[0]);
+                } else {
+                    player.setOption("captions", "track", { languageCode: "en" });
+                }
+                return true;
+            },
+            play() {
+                pendingPlay = true;
+                if (!player || !player.playVideo) {
+                    return;
+                }
+                player.playVideo();
+            },
+            pause() {
+                pendingPlay = false;
+                if (player && player.pauseVideo) {
+                    player.pauseVideo();
+                }
+            },
+            stop() {
+                pendingPlay = false;
+                if (player && player.stopVideo) {
+                    player.stopVideo();
+                }
+            },
+            clear() {
+                pendingPlay = false;
+                currentVideoId = null;
+                if (player && player.stopVideo) {
+                    player.stopVideo();
+                }
+                showPlaceholder("Add a YouTube video to the queue to begin.");
+            },
+            getCurrentVideoId() {
+                return currentVideoId;
+            },
+        };
+
+        function boot() {
+            sendWhenReady("page_ready", 0);
+            loadYouTubeApi();
+        }
+
+        if (document.readyState === "loading") {
+            document.addEventListener("DOMContentLoaded", boot);
+        } else {
+            boot();
+        }
+    </script>
+</body>
+</html>
