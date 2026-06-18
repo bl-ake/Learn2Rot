@@ -17,6 +17,10 @@ __pycache__/
 # Anki runtime config (user settings, queue, playback state)
 meta.json
 
+# Release artifacts
+dist/
+*.ankiaddon
+
 # Local virtual environments (development)
 .venv/
 venv/

@@ -11,6 +11,12 @@ This add-on embeds a YouTube player inside Anki that gives you a couple seconds 
 
 ## Install
 
+### From AnkiWeb
+
+Install through Anki’s add-on manager with the add-on code, or install a downloaded `.ankiaddon` file via **Tools → Add-ons → Install from file…**
+
+### From source
+
 1. Download or clone this repo
 2. Put the folder in your Anki add-ons directory:
    - **macOS:** `~/Library/Application Support/Anki2/addons21/`

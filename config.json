@@ -1,18 +1,11 @@
 {
     "seconds_per_card": 15,
-    "starting_budget_seconds": 10,
+    "starting_budget_seconds": 0,
     "max_budget_seconds": 600,
     "dock_area": "right",
     "show_dock_in_review_only": false,
     "youtube_show_controls": true,
     "youtube_show_fullscreen": true,
     "dock_show_playback_buttons": true,
-    "debug_logging": false,
-    "budget_seconds": 10,
-    "queue": [
-        {
-            "video_id": "HprnN7iyiZI",
-            "title": "Pontefract and Polytechnics: One Of These People Is Lying 1x01"
-        }
-    ]
+    "debug_logging": false
 }
