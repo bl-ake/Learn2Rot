@@ -34,6 +34,7 @@ EXCLUDE_NAMES = frozenset(
     {
         "__pycache__",
         ".git",
+        ".github",
         ".idea",
         ".vscode",
         ".venv",
