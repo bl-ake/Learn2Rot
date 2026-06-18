@@ -11,6 +11,7 @@ import re
 import urllib.error
 import urllib.request
 from dataclasses import dataclass
+from pathlib import Path
 from typing import TYPE_CHECKING, Optional
 
 if TYPE_CHECKING:
@@ -222,6 +223,11 @@ def fetch_video_title(video_id: str) -> str:
     except (urllib.error.URLError, TimeoutError, json.JSONDecodeError, OSError):
         pass
     return video_id
+
+
+def local_file_uri(path: str) -> str:
+    """Return a file:// URI that works on Windows and Unix."""
+    return Path(path).resolve().as_uri()
 
 
 def format_seconds(total_seconds: int) -> str:

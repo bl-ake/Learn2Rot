@@ -12,11 +12,13 @@ from anki.collection import OpChangesAfterUndo
 
 from aqt import gui_hooks, mw, tr
 from aqt.qt import QAction, QMenu
-from aqt.utils import openLink, qconnect, showInfo
+from aqt.qt import QDesktopServices, QUrl
+from aqt.utils import qconnect, showInfo
 
 from .config import get_config
 from .config_dialog import ConfigDialog
 from .logger import clear_log, log, log_path
+from .utils import local_file_uri
 
 if TYPE_CHECKING:
     from .budget import BudgetManager
@@ -78,7 +80,8 @@ def open_debug_log() -> None:
     if not os.path.exists(path):
         showInfo("No AnkiTube debug log exists yet.\n\nEnable debug logging in Settings first.")
         return
-    openLink(f"file://{path}")
+    if not QDesktopServices.openUrl(QUrl(local_file_uri(path))):
+        showInfo(f"Could not open the debug log.\n\nPath:\n{path}")
 
 
 def clear_debug_log() -> None:

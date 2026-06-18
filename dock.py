@@ -12,6 +12,7 @@ from aqt import mw
 from aqt.qt import (
     QAbstractItemView,
     QApplication,
+    QCloseEvent,
     QDockWidget,
     QHBoxLayout,
     QInputDialog,
@@ -21,7 +22,9 @@ from aqt.qt import (
     QPushButton,
     QResizeEvent,
     QShowEvent,
+    QSize,
     QSplitter,
+    QStyle,
     Qt,
     QTimer,
     QVBoxLayout,
@@ -53,6 +56,24 @@ from .widgets import (
 
 _STARTUP_GRACE_MS = 2000
 _RESIZE_SETTLE_MS = 400
+_DEFAULT_DOCK_WIDTH = 320
+_QUEUE_BUTTON_SIZE = 22
+_QUEUE_ICON_SIZE = 14
+
+_DOCK_BUTTON_STYLE = """
+QPushButton {
+    color: palette(window-text);
+    background-color: palette(button);
+    border: 1px solid palette(mid);
+    padding: 2px 6px;
+}
+QPushButton:hover {
+    background-color: palette(light);
+}
+QPushButton:disabled {
+    color: palette(mid);
+}
+"""
 
 
 class AnkiTubeDock(QDockWidget):
@@ -121,6 +142,7 @@ class AnkiTubeDock(QDockWidget):
 
     def _build_ui(self) -> None:
         container = AnkiTubePanel(self)
+        container.setStyleSheet(_DOCK_BUTTON_STYLE)
         layout = QVBoxLayout(container)
         layout.setContentsMargins(8, 8, 8, 8)
 
@@ -134,18 +156,31 @@ class AnkiTubeDock(QDockWidget):
         self._budget_bar.setRange(0, 300)
         self._budget_bar.setTextVisible(False)
 
-        queue_button_size = 22
+        queue_button_size = _QUEUE_BUTTON_SIZE
+        queue_icon_size = QSize(_QUEUE_ICON_SIZE, _QUEUE_ICON_SIZE)
+        style = QApplication.style()
+
         self._add_button = QPushButton("+")
         self._remove_button = QPushButton("x")
-        self._up_button = QPushButton("↑")
-        self._down_button = QPushButton("↓")
-        self._toggle_queue_button = QPushButton("▾")
+        self._up_button = QPushButton()
+        self._down_button = QPushButton()
+        self._toggle_queue_button = QPushButton()
+        for button, icon, tooltip in (
+            (self._up_button, QStyle.StandardPixmap.SP_ArrowUp, "Move up"),
+            (self._down_button, QStyle.StandardPixmap.SP_ArrowDown, "Move down"),
+            (
+                self._toggle_queue_button,
+                QStyle.StandardPixmap.SP_ArrowDown,
+                "Hide queue",
+            ),
+        ):
+            button.setIcon(style.standardIcon(icon))
+            button.setIconSize(queue_icon_size)
+            button.setFixedSize(queue_button_size, queue_button_size)
+            button.setToolTip(tooltip)
         for button, tooltip in (
             (self._add_button, "Add URL"),
             (self._remove_button, "Remove"),
-            (self._up_button, "Move up"),
-            (self._down_button, "Move down"),
-            (self._toggle_queue_button, "Hide queue"),
         ):
             button.setFixedSize(queue_button_size, queue_button_size)
             button.setToolTip(tooltip)
@@ -236,12 +271,33 @@ class AnkiTubeDock(QDockWidget):
 
         self.setWidget(container)
         self.setObjectName("AnkiTubeDock")
+        self.setFeatures(
+            QDockWidget.DockWidgetFeature.DockWidgetMovable
+            | QDockWidget.DockWidgetFeature.DockWidgetClosable
+            | QDockWidget.DockWidgetFeature.DockWidgetFloatable
+        )
         self.setAllowedAreas(
             Qt.DockWidgetArea.LeftDockWidgetArea | Qt.DockWidgetArea.RightDockWidgetArea
         )
 
         area = self._dock_area()
         mw.addDockWidget(area, self)
+        try:
+            width = self._target_dock_width or _DEFAULT_DOCK_WIDTH
+            mw.resizeDocks([self], [width], Qt.Orientation.Horizontal)
+        except Exception:
+            pass
+
+    def _ensure_dock_placement(self, *, force_docked: bool = False) -> None:
+        if self.isFloating():
+            if not force_docked:
+                return
+            self.setFloating(False)
+        area = self._dock_area()
+        if mw.dockWidgetArea(self) != area:
+            mw.removeDockWidget(self)
+            mw.addDockWidget(area, self)
+        self._restore_dock_width()
 
     def _dock_area(self) -> Qt.DockWidgetArea:
         if self._persistence.dock_area_name() == "left":
@@ -263,6 +319,10 @@ class AnkiTubeDock(QDockWidget):
 
     def apply_settings(self) -> None:
         self._apply_playback_button_visibility()
+        config = self._config()
+        if config.get("show_dock_in_review_only", False):
+            self.setVisible(mw.state == "review")
+        self._ensure_dock_placement(force_docked=True)
         was_playing = self._is_playing
         self._bridge.player_ready = False
         if was_playing:
@@ -350,7 +410,7 @@ class AnkiTubeDock(QDockWidget):
             pass
 
     def _apply_target_layout(self) -> None:
-        self._restore_dock_width()
+        self._ensure_dock_placement(force_docked=True)
         if self._queue_visible and self._splitter.height() > 50:
             self._restore_splitter_sizes()
         self._layout_restored = True
@@ -360,7 +420,7 @@ class AnkiTubeDock(QDockWidget):
 
     def _on_layout_resize_settled(self) -> None:
         if not self._startup_complete:
-            self._restore_dock_width()
+            self._ensure_dock_placement(force_docked=True)
             if self._queue_visible and self._splitter.height() > 50:
                 self._restore_splitter_sizes()
             return
@@ -383,6 +443,21 @@ class AnkiTubeDock(QDockWidget):
     def showEvent(self, event: QShowEvent) -> None:
         super().showEvent(event)
         self._schedule_layout_settle()
+
+    def closeEvent(self, event: QCloseEvent) -> None:
+        if self.isFloating():
+            event.ignore()
+            self._redock_from_float()
+            return
+        super().closeEvent(event)
+
+    def _redock_from_float(self) -> None:
+        self.setFloating(False)
+        self._ensure_dock_placement(force_docked=True)
+        if self._config().get("show_dock_in_review_only", False) and mw.state != "review":
+            self.hide()
+        else:
+            self.show()
 
     def resizeEvent(self, event: QResizeEvent) -> None:
         super().resizeEvent(event)
@@ -418,7 +493,13 @@ class AnkiTubeDock(QDockWidget):
         self._remove_button.setEnabled(visible)
         self._up_button.setEnabled(visible)
         self._down_button.setEnabled(visible)
-        self._toggle_queue_button.setText("▾" if visible else "▸")
+        style = QApplication.style()
+        toggle_icon = (
+            QStyle.StandardPixmap.SP_ArrowDown
+            if visible
+            else QStyle.StandardPixmap.SP_ArrowRight
+        )
+        self._toggle_queue_button.setIcon(style.standardIcon(toggle_icon))
         self._toggle_queue_button.setToolTip(
             "Hide queue" if visible else "Show queue"
         )

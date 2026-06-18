@@ -40,6 +40,15 @@ def test_format_seconds() -> None:
     assert utils.format_seconds(3661) == "1:01:01"
 
 
+def test_local_file_uri_uses_forward_slashes(tmp_path) -> None:
+    utils = load_addon_module("utils", "utils.py")
+    log_file = tmp_path / "ankittube.log"
+    log_file.write_text("test", encoding="utf-8")
+    uri = utils.local_file_uri(str(log_file))
+    assert uri.startswith("file://")
+    assert "\\" not in uri
+
+
 def test_format_queue_item_label() -> None:
     utils = load_addon_module("utils", "utils.py")
     label = utils.format_queue_item_label("Test", 2, 5, playing_prefix="▶ ")
