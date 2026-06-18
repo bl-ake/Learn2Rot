@@ -1,5 +1,7 @@
 # AnkiTube
 
+[![CI](https://github.com/bl-ake/AnkiTube/actions/workflows/ci.yml/badge.svg)](https://github.com/bl-ake/AnkiTube/actions/workflows/ci.yml)
+
 An Anki add-on that lets you watch YouTube in a dock panel, but only with time you've earned by reviewing cards.
 
 This add-on embeds a YouTube player inside Anki that gives you a couple seconds of watch time per card answered. Videos are played from a queue you can build by pasting URLs, dragging-and-dropping, or using the `+` button.
