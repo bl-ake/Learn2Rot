@@ -1,0 +1,23 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# macOS
+.DS_Store
+
+# Editors / IDEs
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Anki runtime config (user settings, queue, playback state)
+meta.json
+
+# Local virtual environments (development)
+.venv/
+venv/
+env/

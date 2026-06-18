@@ -141,18 +141,17 @@ class VideoCardProgress:
 
 def allocate_queue_card_progress(
     durations_seconds: list[Optional[int]],
-    lifetime_earned_seconds: int,
+    available_budget_seconds: int,
     seconds_per_card: int,
     *,
-    current_index: int = -1,
     video_ids: Optional[list[str]] = None,
     playback_positions: Optional[dict[str, float]] = None,
 ) -> list[VideoCardProgress]:
-    """Allocate earned review time across the queue in order."""
+    """Allocate unspent review budget across the queue in order."""
     if seconds_per_card <= 0:
         return [VideoCardProgress(None, None) for _ in durations_seconds]
 
-    remaining_seconds = max(0, int(lifetime_earned_seconds))
+    remaining_budget = max(0, int(available_budget_seconds))
     progress: list[VideoCardProgress] = []
 
     for index, duration in enumerate(durations_seconds):
@@ -161,20 +160,28 @@ def allocate_queue_card_progress(
             progress.append(VideoCardProgress(None, None))
             continue
 
-        needed_seconds = duration or 0
-        allocated_seconds = min(remaining_seconds, needed_seconds)
-        cards_done = min(cards_total, allocated_seconds // seconds_per_card)
-        remaining_seconds -= allocated_seconds
-
+        watched_seconds = 0
         if (
-            index == current_index
-            and video_ids is not None
+            video_ids is not None
             and playback_positions is not None
             and index < len(video_ids)
         ):
             watched_seconds = int(playback_positions.get(video_ids[index], 0))
-            cards_from_playback = min(cards_total, watched_seconds // seconds_per_card)
-            cards_done = min(cards_total, max(cards_done, cards_from_playback))
+
+        duration_seconds = duration or 0
+        if duration_seconds > 0 and watched_seconds >= duration_seconds:
+            cards_from_watching = cards_total
+        else:
+            cards_from_watching = watched_seconds // seconds_per_card
+
+        cards_still_needed = cards_total - cards_from_watching
+        seconds_still_needed = cards_still_needed * seconds_per_card
+        budget_allocated = min(remaining_budget, seconds_still_needed)
+        cards_done = min(
+            cards_total,
+            cards_from_watching + budget_allocated // seconds_per_card,
+        )
+        remaining_budget -= budget_allocated
 
         progress.append(VideoCardProgress(cards_done, cards_total))
 
