@@ -1,8 +1,14 @@
+# Copyright (C) 2026 bl-ake
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
+"""AnkiTube settings dialog."""
+
 from __future__ import annotations
 
 from aqt import mw
 from aqt.qt import (
     QCheckBox,
+    QComboBox,
     QDialog,
     QDialogButtonBox,
     QFormLayout,
@@ -13,6 +19,7 @@ from aqt.qt import (
 from aqt.utils import showInfo
 
 from .budget import BudgetManager
+from .config import get_config, save_preferences
 
 
 class ConfigDialog(QDialog):
@@ -24,7 +31,7 @@ class ConfigDialog(QDialog):
         self._budget = budget
         self.setWindowTitle("AnkiTube Settings")
 
-        config = mw.addonManager.getConfig(addon_module) or {}
+        config = get_config(addon_module)
 
         layout = QVBoxLayout(self)
         form = QFormLayout()
@@ -47,19 +54,46 @@ class ConfigDialog(QDialog):
         self.max_budget.setValue(int(config.get("max_budget_seconds", 600)))
         form.addRow("Maximum watch budget (default 10 min):", self.max_budget)
 
-        self.debug_logging = QCheckBox("Write events to ankittube.log in your Anki profile folder")
+        self.show_dock_in_review_only = QCheckBox(
+            "Hide the player outside the review screen"
+        )
+        self.show_dock_in_review_only.setChecked(
+            bool(config.get("show_dock_in_review_only", False))
+        )
+        form.addRow("Review only:", self.show_dock_in_review_only)
+
+        self.dock_area = QComboBox()
+        self.dock_area.addItem("Right", "right")
+        self.dock_area.addItem("Left", "left")
+        area = str(config.get("dock_area", "right")).lower()
+        self.dock_area.setCurrentIndex(0 if area != "left" else 1)
+        form.addRow("Dock side:", self.dock_area)
+
+        self.debug_logging = QCheckBox(
+            "Write events to ankittube.log in your Anki profile folder"
+        )
         self.debug_logging.setChecked(bool(config.get("debug_logging", False)))
         form.addRow("Debug logging:", self.debug_logging)
 
-        self.youtube_show_controls = QCheckBox("Show play bar and controls in the embedded player")
-        self.youtube_show_controls.setChecked(bool(config.get("youtube_show_controls", True)))
+        self.youtube_show_controls = QCheckBox(
+            "Show play bar and controls in the embedded player"
+        )
+        self.youtube_show_controls.setChecked(
+            bool(config.get("youtube_show_controls", True))
+        )
         form.addRow("YouTube controls:", self.youtube_show_controls)
 
-        self.youtube_show_fullscreen = QCheckBox("Show fullscreen button in the embedded player")
-        self.youtube_show_fullscreen.setChecked(bool(config.get("youtube_show_fullscreen", True)))
+        self.youtube_show_fullscreen = QCheckBox(
+            "Show fullscreen button in the embedded player"
+        )
+        self.youtube_show_fullscreen.setChecked(
+            bool(config.get("youtube_show_fullscreen", True))
+        )
         form.addRow("YouTube fullscreen:", self.youtube_show_fullscreen)
 
-        self.dock_show_playback_buttons = QCheckBox("Show Play, Pause, Next, and Fullscreen below the player")
+        self.dock_show_playback_buttons = QCheckBox(
+            "Show Play, Pause, Next, and Fullscreen below the player"
+        )
         self.dock_show_playback_buttons.setChecked(
             bool(config.get("dock_show_playback_buttons", True))
         )
@@ -87,15 +121,20 @@ class ConfigDialog(QDialog):
         layout.addWidget(buttons)
 
     def _save(self) -> None:
-        config = mw.addonManager.getConfig(self._addon_module) or {}
-        config["seconds_per_card"] = self.seconds_per_card.value()
-        config["starting_budget_seconds"] = self.starting_budget.value()
-        config["max_budget_seconds"] = self.max_budget.value()
-        config["debug_logging"] = self.debug_logging.isChecked()
-        config["youtube_show_controls"] = self.youtube_show_controls.isChecked()
-        config["youtube_show_fullscreen"] = self.youtube_show_fullscreen.isChecked()
-        config["dock_show_playback_buttons"] = self.dock_show_playback_buttons.isChecked()
-        mw.addonManager.writeConfig(self._addon_module, config)
+        save_preferences(
+            self._addon_module,
+            {
+                "seconds_per_card": self.seconds_per_card.value(),
+                "starting_budget_seconds": self.starting_budget.value(),
+                "max_budget_seconds": self.max_budget.value(),
+                "show_dock_in_review_only": self.show_dock_in_review_only.isChecked(),
+                "dock_area": self.dock_area.currentData(),
+                "debug_logging": self.debug_logging.isChecked(),
+                "youtube_show_controls": self.youtube_show_controls.isChecked(),
+                "youtube_show_fullscreen": self.youtube_show_fullscreen.isChecked(),
+                "dock_show_playback_buttons": self.dock_show_playback_buttons.isChecked(),
+            },
+        )
         self._budget.seconds = self._budget.seconds
         self._budget.save()
         showInfo("AnkiTube settings saved.")

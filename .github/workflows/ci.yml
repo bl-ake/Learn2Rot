@@ -16,8 +16,14 @@ jobs:
         with:
           python-version: "3.12"
 
+      - name: Install dev dependencies
+        run: pip install -r requirements-dev.txt
+
       - name: Check Python syntax
         run: python -m compileall -q .
+
+      - name: Run unit tests
+        run: pytest tests/ -q
 
       - name: Validate package contents
         run: python package.py --check

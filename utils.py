@@ -1,3 +1,8 @@
+# Copyright (C) 2026 bl-ake
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
+"""YouTube URL parsing, metadata fetch, and queue helpers."""
+
 from __future__ import annotations
 
 import json

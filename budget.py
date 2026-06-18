@@ -1,8 +1,15 @@
+# Copyright (C) 2026 bl-ake
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
+"""Watch-time budget manager."""
+
 from __future__ import annotations
 
 from typing import Callable, Optional
 
 from aqt import mw
+
+from .config import get_config, write_config
 
 
 class BudgetManager:
@@ -39,7 +46,7 @@ class BudgetManager:
     def save(self) -> None:
         config = self._config()
         config["budget_seconds"] = self._seconds
-        mw.addonManager.writeConfig(self._addon_module, config)
+        write_config(self._addon_module, config)
 
     def add_seconds(self, amount: int) -> None:
         if amount <= 0:
@@ -62,7 +69,7 @@ class BudgetManager:
         return self._seconds > 0
 
     def _config(self) -> dict:
-        return mw.addonManager.getConfig(self._addon_module) or {}
+        return get_config(self._addon_module)
 
     def _max_budget_seconds(self) -> int:
         return max(1, int(self._config().get("max_budget_seconds", 600)))

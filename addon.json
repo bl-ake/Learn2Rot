@@ -1,0 +1,13 @@
+{
+    "display_name": "AnkiTube",
+    "module_name": "AnkiTube",
+    "repo_name": "AnkiTube",
+    "author": "bl-ake",
+    "contact": "https://github.com/bl-ake/AnkiTube/issues",
+    "homepage": "https://github.com/bl-ake/AnkiTube",
+    "copyright_start": 2026,
+    "tags": "youtube video review motivation dock player",
+    "conflicts": [],
+    "targets": ["anki21"],
+    "min_anki_version": "2.1.45"
+}

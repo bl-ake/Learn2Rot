@@ -11,6 +11,13 @@ This add-on embeds a YouTube player inside Anki that gives you a couple seconds 
 
 ## Install
 
+### From GitHub Releases
+
+1. Open the [Releases](https://github.com/bl-ake/AnkiTube/releases) page
+2. Download the latest `AnkiTube.ankiaddon` asset
+3. Double-click the file or use **Tools → Add-ons → Install from file…**
+4. Restart Anki if prompted
+
 ### From AnkiWeb
 
 Install through Anki’s add-on manager with the add-on code, or install a downloaded `.ankiaddon` file via **Tools → Add-ons → Install from file…**
@@ -25,6 +32,12 @@ Install through Anki’s add-on manager with the add-on code, or install a downl
 3. Restart Anki
 
 The folder name can be anything, but `AnkiTube` keeps things simple.
+
+For local packaging without bumping the AnkiWeb `mod` timestamp:
+
+```bash
+python package.py --no-update-mod
+```
 
 ## Usage
 
@@ -43,6 +56,7 @@ Useful options:
 - **Seconds earned per reviewed card** — how much watch time each card is worth (default: 15s)
 - **Maximum watch budget** — cap on banked time (default: 10 minutes)
 - **Show dock in review only** — hide the player outside the review screen
+- **Dock side** — dock on the left or right side of the main window
 
 ## Keyboard shortcuts
 
@@ -60,3 +74,9 @@ When the player is open and you're not typing in a text field:
 ## Debug logging
 
 Enable **Debug logging** in settings, then check **Tools → AnkiTube → View Debug Log**. The log file lives in your Anki profile folder as `ankittube.log`.
+
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md). Bug reports should use the GitHub issue template when possible.
+
+- **YouTube** playback uses the [YouTube IFrame Player API](https://developers.google.com/youtube/iframe_api_reference); video titles may be fetched via [YouTube oEmbed](https://oembed.com/).
