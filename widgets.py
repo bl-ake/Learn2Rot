@@ -112,7 +112,8 @@ class PlayerShortcutFilter(QObject):
     def _should_handle(self) -> bool:
         if not self._dock_alive():
             return False
-        if not self._dock._current_item():
+        system_mode = self._dock._is_system_mode()
+        if not system_mode and not self._dock._current_item():
             return False
         fullscreen = self._dock._fullscreen
         if fullscreen is not None and fullscreen.isVisible():
@@ -140,6 +141,7 @@ class PlayerShortcutFilter(QObject):
 
             key_event = event
             key = key_event.key()
+            system_mode = self._dock._is_system_mode()
 
             if self._is_option_key(key):
                 if event.type() == QEvent.Type.KeyPress:
@@ -166,6 +168,8 @@ class PlayerShortcutFilter(QObject):
             if key == Qt.Key.Key_P:
                 self._dock._toggle_playback()
                 return True
+            if system_mode:
+                return False
             if key == Qt.Key.Key_G:
                 self._dock._toggle_fullscreen()
                 return True

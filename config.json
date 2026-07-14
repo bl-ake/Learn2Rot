@@ -1,5 +1,5 @@
 {
-    "config_version": 1,
+    "config_version": 2,
     "seconds_per_card": 15,
     "starting_budget_seconds": 0,
     "max_budget_seconds": 600,
@@ -8,5 +8,8 @@
     "youtube_show_controls": true,
     "youtube_show_fullscreen": true,
     "dock_show_playback_buttons": true,
-    "debug_logging": false
+    "debug_logging": false,
+    "media_mode": "system",
+    "auto_resume_on_budget": false,
+    "system_media_poll_ms": 500
 }

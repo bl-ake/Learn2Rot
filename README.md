@@ -2,14 +2,13 @@
 
 [![CI](https://github.com/bl-ake/AnkiTube/actions/workflows/ci.yml/badge.svg)](https://github.com/bl-ake/AnkiTube/actions/workflows/ci.yml)
 
-An Anki add-on that lets you watch YouTube in a dock panel, but only with time you've earned by reviewing cards.
-
-This add-on embeds a YouTube player inside Anki that gives you a couple seconds of watch time per card answered. Videos are played from a queue you can build by pasting URLs, dragging-and-dropping, or using the `+` button.
+An Anki add-on that meters watch time you've earned by reviewing cards. By default on macOS, it observes and pauses system Now Playing media (Spotify, Music, browser tabs that report Now Playing, and similar). An embedded YouTube queue/player remains available as a legacy mode.
 
 ## Requirements
 
 - Anki **2.1.45+** (see `manifest.json`)
-- Internet access for YouTube
+- **macOS** for system media control (default mode)
+- Internet access if using legacy YouTube mode
 
 ## Install
 
@@ -45,11 +44,11 @@ python package.py --no-update-mod
 
 Open **Tools → AnkiTube → Show Player** (or **Toggle Player**).
 
-1. Add videos to the queue
-2. Review some cards to earn watch time
-3. Hit play
+1. Review cards to earn watch-time budget
+2. Play media in another app (or press Play in the dock)
+3. When your budget runs out, AnkiTube pauses Now Playing and keeps re-pausing while you are out of time
 
-Drag YouTube links onto the dock or queue to add them. Drop on the top half of the panel to insert at the front of the queue.
+Legacy YouTube mode: enable **Use embedded YouTube player (legacy)** in Settings, then add videos via paste, drag-and-drop, or `+`.
 
 Settings are under **Tools → AnkiTube → Settings...**
 
@@ -57,21 +56,32 @@ Useful options:
 
 - **Seconds earned per reviewed card** — how much watch time each card is worth (default: 15s)
 - **Maximum watch budget** — cap on banked time (default: 10 minutes)
-- **Show dock in review only** — hide the player outside the review screen
+- **Auto-resume media when budget is restored** — off by default; when on, resumes after earning time following exhaustion
+- **Use embedded YouTube player (legacy)** — restore the in-dock queue/player
+- **Show dock in review only** — hide the dock outside the review screen
 - **Dock side** — dock on the left or right side of the main window
+
+### Limits (system media mode)
+
+Lockout only applies to apps that publish to macOS Now Playing. Sources that do not register can still make sound. Enforcement is best-effort (poll + pause), not a hard OS block.
 
 ## Keyboard shortcuts
 
-When the player is open and you're not typing in a text field:
+When the dock is open and you're not typing in a text field:
 
 | Key | Action |
 |-----|--------|
 | `P` | Play / pause |
+| Hold `Option` (macOS) / `Alt` | Temporarily pause |
+
+Legacy YouTube mode also supports:
+
+| Key | Action |
+|-----|--------|
 | `G` | Toggle fullscreen |
 | `C` | Toggle captions |
 | `←` / `→` | Seek backward / forward |
 | `↑` / `↓` | Volume up / down |
-| Hold `Option` (macOS) / `Alt` | Temporarily pause |
 
 ## Debug logging
 
@@ -81,4 +91,5 @@ Enable **Debug logging** in settings, then check **Tools → AnkiTube → View D
 
 See [CONTRIBUTING.md](CONTRIBUTING.md). Bug reports should use the GitHub issue template when possible.
 
-- **YouTube** playback uses the [YouTube IFrame Player API](https://developers.google.com/youtube/iframe_api_reference); video titles may be fetched via [YouTube oEmbed](https://oembed.com/).
+- **YouTube** (legacy mode) uses the [YouTube IFrame Player API](https://developers.google.com/youtube/iframe_api_reference); video titles may be fetched via [YouTube oEmbed](https://oembed.com/).
+- System media control on macOS uses private Now Playing APIs via `osascript` (best-effort; may change with OS updates).

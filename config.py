@@ -11,7 +11,10 @@ from aqt import mw
 
 from ._version import __version__  # noqa: F401 — exposed for packaging
 
-CONFIG_VERSION = 1
+CONFIG_VERSION = 2
+
+MEDIA_MODE_SYSTEM = "system"
+MEDIA_MODE_YOUTUBE = "youtube"
 
 PREFERENCE_KEYS = frozenset(
     {
@@ -25,6 +28,9 @@ PREFERENCE_KEYS = frozenset(
         "youtube_show_fullscreen",
         "dock_show_playback_buttons",
         "debug_logging",
+        "media_mode",
+        "auto_resume_on_budget",
+        "system_media_poll_ms",
     }
 )
 
@@ -53,6 +59,9 @@ DEFAULTS: dict[str, Any] = {
     "youtube_show_fullscreen": True,
     "dock_show_playback_buttons": True,
     "debug_logging": False,
+    "media_mode": MEDIA_MODE_SYSTEM,
+    "auto_resume_on_budget": False,
+    "system_media_poll_ms": 500,
 }
 
 
@@ -60,7 +69,7 @@ def get_config(addon_module: str) -> dict[str, Any]:
     stored = mw.addonManager.getConfig(addon_module) or {}
     merged = dict(DEFAULTS)
     merged.update(stored)
-    return merged
+    return migrate_config(merged)
 
 
 def write_config(addon_module: str, config: dict[str, Any]) -> None:
@@ -71,6 +80,17 @@ def migrate_config(config: dict[str, Any]) -> dict[str, Any]:
     version = int(config.get("config_version", 0) or 0)
     if version < CONFIG_VERSION:
         config["config_version"] = CONFIG_VERSION
+    mode = str(config.get("media_mode", MEDIA_MODE_SYSTEM)).lower()
+    if mode not in (MEDIA_MODE_SYSTEM, MEDIA_MODE_YOUTUBE):
+        config["media_mode"] = MEDIA_MODE_SYSTEM
+    else:
+        config["media_mode"] = mode
+    try:
+        poll_ms = int(config.get("system_media_poll_ms", 500))
+    except (TypeError, ValueError):
+        poll_ms = 500
+    config["system_media_poll_ms"] = max(200, min(5000, poll_ms))
+    config["auto_resume_on_budget"] = bool(config.get("auto_resume_on_budget", False))
     return config
 
 
@@ -85,3 +105,9 @@ def save_preferences(addon_module: str, preferences: dict[str, Any]) -> None:
 
 def preference_defaults() -> dict[str, Any]:
     return {key: DEFAULTS[key] for key in PREFERENCE_KEYS if key in DEFAULTS}
+
+
+def is_system_media_mode(config: dict[str, Any] | None = None) -> bool:
+    if config is None:
+        return True
+    return str(config.get("media_mode", MEDIA_MODE_SYSTEM)).lower() == MEDIA_MODE_SYSTEM

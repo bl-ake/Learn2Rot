@@ -19,7 +19,7 @@ from aqt.qt import (
 from aqt.utils import showInfo
 
 from .budget import BudgetManager
-from .config import get_config, save_preferences
+from .config import MEDIA_MODE_SYSTEM, MEDIA_MODE_YOUTUBE, get_config, save_preferences
 
 
 class ConfigDialog(QDialog):
@@ -55,7 +55,7 @@ class ConfigDialog(QDialog):
         form.addRow("Maximum watch budget (default 10 min):", self.max_budget)
 
         self.show_dock_in_review_only = QCheckBox(
-            "Hide the player outside the review screen"
+            "Hide the dock outside the review screen"
         )
         self.show_dock_in_review_only.setChecked(
             bool(config.get("show_dock_in_review_only", False))
@@ -68,6 +68,23 @@ class ConfigDialog(QDialog):
         area = str(config.get("dock_area", "right")).lower()
         self.dock_area.setCurrentIndex(0 if area != "left" else 1)
         form.addRow("Dock side:", self.dock_area)
+
+        self.legacy_youtube = QCheckBox(
+            "Use embedded YouTube player (legacy)"
+        )
+        self.legacy_youtube.setChecked(
+            str(config.get("media_mode", MEDIA_MODE_SYSTEM)).lower()
+            == MEDIA_MODE_YOUTUBE
+        )
+        form.addRow("Media mode:", self.legacy_youtube)
+
+        self.auto_resume_on_budget = QCheckBox(
+            "Auto-resume media when budget is restored (default off)"
+        )
+        self.auto_resume_on_budget.setChecked(
+            bool(config.get("auto_resume_on_budget", False))
+        )
+        form.addRow("Auto-resume:", self.auto_resume_on_budget)
 
         self.debug_logging = QCheckBox(
             "Write events to ankittube.log in your Anki profile folder"
@@ -92,7 +109,7 @@ class ConfigDialog(QDialog):
         form.addRow("YouTube fullscreen:", self.youtube_show_fullscreen)
 
         self.dock_show_playback_buttons = QCheckBox(
-            "Show Play, Pause, Next, and Fullscreen below the player"
+            "Show Play and Pause controls on the dock"
         )
         self.dock_show_playback_buttons.setChecked(
             bool(config.get("dock_show_playback_buttons", True))
@@ -100,6 +117,13 @@ class ConfigDialog(QDialog):
         form.addRow("Dock playback buttons:", self.dock_show_playback_buttons)
 
         layout.addLayout(form)
+        layout.addWidget(
+            QLabel(
+                "By default, AnkiTube meters and pauses macOS Now Playing media "
+                "(Spotify, Music, browser tabs that report Now Playing, etc.). "
+                "Lockout is best-effort for apps that publish to Now Playing."
+            )
+        )
         layout.addWidget(
             QLabel(
                 "Current watch budget is saved automatically. "
@@ -133,6 +157,12 @@ class ConfigDialog(QDialog):
                 "youtube_show_controls": self.youtube_show_controls.isChecked(),
                 "youtube_show_fullscreen": self.youtube_show_fullscreen.isChecked(),
                 "dock_show_playback_buttons": self.dock_show_playback_buttons.isChecked(),
+                "media_mode": (
+                    MEDIA_MODE_YOUTUBE
+                    if self.legacy_youtube.isChecked()
+                    else MEDIA_MODE_SYSTEM
+                ),
+                "auto_resume_on_budget": self.auto_resume_on_budget.isChecked(),
             },
         )
         self._budget.seconds = self._budget.seconds

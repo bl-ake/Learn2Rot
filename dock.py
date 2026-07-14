@@ -1,7 +1,7 @@
 # Copyright (C) 2026 bl-ake
 # SPDX-License-Identifier: AGPL-3.0-or-later
 
-"""AnkiTube dock widget — orchestrates queue, player, and budget."""
+"""AnkiTube dock widget — orchestrates budget, system media, and legacy player."""
 
 from __future__ import annotations
 
@@ -34,8 +34,9 @@ from aqt.utils import qconnect, showWarning
 from aqt.webview import AnkiWebView, AnkiWebViewKind
 
 from .budget import BudgetManager
-from .config import get_config
+from .config import MEDIA_MODE_SYSTEM, get_config, is_system_media_mode
 from .logger import log
+from .media_control import NowPlayingInfo, create_media_controller
 from .metadata import fetch_video_metadata_async
 from .persistence import DockPersistence
 from .player_bridge import PlayerBridge
@@ -105,31 +106,35 @@ class AnkiTubeDock(QDockWidget):
         self._mw_resize_filter: MainWindowResizeFilter | None = None
         self._metadata_tokens: dict[str, int] = {}
         self._metadata_token = 0
+        self._media = create_media_controller()
+        self._now_playing = NowPlayingInfo()
+        self._youtube_player_initialized = False
 
         self._timer = QTimer(self)
         self._timer.setInterval(1000)
         self._timer.timeout.connect(self._on_timer_tick)
 
+        self._system_poll_timer = QTimer(self)
+        self._system_poll_timer.timeout.connect(self._on_system_media_poll)
+
         log("AnkiTube dock initializing")
         self._build_ui()
         self._load_state()
         self._update_budget_ui()
+        self._apply_media_mode_ui()
         QTimer.singleShot(0, self._finish_initial_layout)
 
         package = mw.addonManager.addonFromModule(addon_module)
-        player_url = self._bridge.player_url()
         log(f"addon package={package!r} module={addon_module!r}")
-        log(f"player url={player_url.toString()}")
         log(
-            f"queue size={len(self._queue.items)} budget={self._budget.seconds}s "
-            f"current_index={self._queue.current_index}"
+            f"media_mode={self._media_mode()!r} queue size={len(self._queue.items)} "
+            f"budget={self._budget.seconds}s current_index={self._queue.current_index}"
         )
 
-        self._bridge.register_exports()
-        self._bridge.setup_webview(self._web)
-        self._bridge.setup_player_webview(self._web)
-        qconnect(self._web.loadFinished, self._bridge.on_web_load_finished)
-        self._web.load_url(player_url)
+        if self._is_system_mode():
+            self._start_system_media_polling()
+        else:
+            self._initialize_youtube_player()
 
         self._player_shortcut_filter = PlayerShortcutFilter(self)
         app = QApplication.instance()
@@ -156,6 +161,8 @@ class AnkiTubeDock(QDockWidget):
         self._budget_bar = QProgressBar()
         self._budget_bar.setRange(0, 300)
         self._budget_bar.setTextVisible(False)
+        self._now_playing_label = QLabel("Nothing playing")
+        self._now_playing_label.setWordWrap(True)
 
         queue_button_size = _QUEUE_BUTTON_SIZE
         queue_icon_size = QSize(_QUEUE_ICON_SIZE, _QUEUE_ICON_SIZE)
@@ -199,6 +206,7 @@ class AnkiTubeDock(QDockWidget):
         budget_row.addLayout(queue_buttons)
         top_layout.addLayout(budget_row)
         top_layout.addWidget(self._budget_bar)
+        top_layout.addWidget(self._now_playing_label)
 
         self._queue_list = QueueListWidget(self)
         self._queue_list.setSelectionMode(
@@ -207,7 +215,8 @@ class AnkiTubeDock(QDockWidget):
         top_layout.addWidget(self._queue_list, stretch=1)
         top_panel.setMinimumHeight(120)
 
-        bottom_panel = QWidget()
+        self._bottom_panel = QWidget()
+        bottom_panel = self._bottom_panel
         bottom_layout = QVBoxLayout(bottom_panel)
         bottom_layout.setContentsMargins(0, 0, 0, 0)
 
@@ -308,24 +317,88 @@ class AnkiTubeDock(QDockWidget):
     def _config(self) -> dict:
         return get_config(self._addon_module)
 
-    def _apply_playback_button_visibility(self) -> None:
-        show = bool(self._config().get("dock_show_playback_buttons", True))
-        for button in (
-            self._play_button,
-            self._pause_button,
+    def _media_mode(self) -> str:
+        return str(self._config().get("media_mode", MEDIA_MODE_SYSTEM)).lower()
+
+    def _is_system_mode(self) -> bool:
+        return is_system_media_mode(self._config())
+
+    def _initialize_youtube_player(self) -> None:
+        if self._youtube_player_initialized:
+            return
+        player_url = self._bridge.player_url()
+        log(f"player url={player_url.toString()}")
+        self._bridge.register_exports()
+        self._bridge.setup_webview(self._web)
+        self._bridge.setup_player_webview(self._web)
+        qconnect(self._web.loadFinished, self._bridge.on_web_load_finished)
+        self._web.load_url(player_url)
+        self._youtube_player_initialized = True
+
+    def _start_system_media_polling(self) -> None:
+        poll_ms = int(self._config().get("system_media_poll_ms", 500))
+        self._system_poll_timer.setInterval(max(200, poll_ms))
+        if not self._system_poll_timer.isActive():
+            self._system_poll_timer.start()
+        self._on_system_media_poll()
+
+    def _stop_system_media_polling(self) -> None:
+        self._system_poll_timer.stop()
+
+    def _apply_media_mode_ui(self) -> None:
+        system = self._is_system_mode()
+        self._now_playing_label.setVisible(system)
+        for widget in (
+            self._queue_list,
+            self._add_button,
+            self._remove_button,
+            self._up_button,
+            self._down_button,
+            self._toggle_queue_button,
+            self._web,
             self._next_button,
             self._fullscreen_button,
         ):
-            button.setVisible(show)
+            widget.setVisible(not system)
+        if system:
+            self._top_panel.setMinimumHeight(0)
+            self._bottom_panel.setMinimumHeight(0)
+            self._now_playing_label.setText(self._now_playing.display_label())
+            QTimer.singleShot(0, self._collapse_splitter_for_system_mode)
+        else:
+            self._bottom_panel.setMinimumHeight(200)
+            self._apply_queue_visibility()
+        self._apply_playback_button_visibility()
+
+    def _collapse_splitter_for_system_mode(self) -> None:
+        if not self._is_system_mode():
+            return
+        total = max(self._splitter.height(), 120)
+        top = max(self._top_panel.sizeHint().height(), 80)
+        bottom = max(40, total - top)
+        self._splitter.setSizes([top, bottom])
+
+    def _apply_playback_button_visibility(self) -> None:
+        show = bool(self._config().get("dock_show_playback_buttons", True))
+        system = self._is_system_mode()
+        self._play_button.setVisible(show)
+        self._pause_button.setVisible(show)
+        self._next_button.setVisible(show and not system)
+        self._fullscreen_button.setVisible(show and not system)
 
     def apply_settings(self) -> None:
-        self._apply_playback_button_visibility()
+        self._apply_media_mode_ui()
         self._apply_dock_visibility()
         self._ensure_dock_placement(force_docked=True)
+        if self._is_system_mode():
+            self._start_system_media_polling()
+            return
+        self._stop_system_media_polling()
         was_playing = self._is_playing
         self._bridge.player_ready = False
         if was_playing:
             self._bridge.pending_play = True
+        self._initialize_youtube_player()
         player_url = self._bridge.player_url()
         self._web.load_url(player_url)
         if self._fullscreen is not None:
@@ -459,7 +532,9 @@ class AnkiTubeDock(QDockWidget):
 
     def _finish_initial_layout(self) -> None:
         self._apply_dock_visibility()
-        if not self._queue_visible:
+        if self._is_system_mode():
+            self._apply_media_mode_ui()
+        elif not self._queue_visible:
             self._apply_queue_visibility()
         self._schedule_layout_settle()
 
@@ -510,6 +585,8 @@ class AnkiTubeDock(QDockWidget):
         self._save_state()
 
     def _apply_queue_visibility(self) -> None:
+        if self._is_system_mode():
+            return
         visible = self._queue_visible
         self._queue_list.setVisible(visible)
         self._remove_button.setEnabled(visible)
@@ -641,6 +718,7 @@ class AnkiTubeDock(QDockWidget):
     def shutdown(self) -> None:
         log("AnkiTube dock shutting down")
         self._timer.stop()
+        self._stop_system_media_polling()
         self._startup_grace_timer.stop()
         self._layout_settle_timer.stop()
         self._remove_player_shortcut_filter()
@@ -655,7 +733,7 @@ class AnkiTubeDock(QDockWidget):
                 self._fullscreen._closing = True
                 self._fullscreen.close()
 
-        if self._bridge.player_ready:
+        if not self._is_system_mode() and self._bridge.player_ready:
             self._capture_playback_position(finish_shutdown)
         else:
             finish_shutdown()
@@ -666,6 +744,7 @@ class AnkiTubeDock(QDockWidget):
             self._handle_budget_exhausted()
 
     def on_card_answered(self) -> None:
+        had_time = self._budget.has_time()
         reward = self._persistence.seconds_per_card()
         self._budget.add_seconds(reward)
         self._reward_history.append(reward)
@@ -677,6 +756,17 @@ class AnkiTubeDock(QDockWidget):
             f"card answered: +{reward}s "
             f"(history={self._reward_history}, earned={self._lifetime_earned_seconds})"
         )
+        if (
+            self._is_system_mode()
+            and bool(self._config().get("auto_resume_on_budget", False))
+            and self._paused_for_budget
+            and not had_time
+            and self._budget.has_time()
+        ):
+            self._paused_for_budget = False
+            self._media.play()
+            log("auto-resumed system media after budget restore")
+        self._update_now_playing_label()
 
     def on_review_undo(self) -> None:
         if self._reward_history:
@@ -699,6 +789,42 @@ class AnkiTubeDock(QDockWidget):
         self._budget_label.setText(f"Watch time remaining: {format_seconds(seconds)}")
         self._budget_bar.setRange(0, cap)
         self._budget_bar.setValue(min(seconds, cap))
+
+    def _update_now_playing_label(self) -> None:
+        if not hasattr(self, "_now_playing_label"):
+            return
+        self._now_playing_label.setText(self._now_playing.display_label())
+
+    def _on_system_media_poll(self) -> None:
+        if not self._is_system_mode():
+            return
+        info = self._media.get_now_playing()
+        self._now_playing = info
+        self._update_now_playing_label()
+        if self._hold_paused:
+            return
+        if not info.supported:
+            if self._is_playing:
+                self._is_playing = False
+                self._timer.stop()
+            return
+        if not self._budget.has_time():
+            if info.is_playing:
+                self._media.pause()
+                log("system media lockout: paused while out of budget")
+            if self._is_playing:
+                self._is_playing = False
+                self._timer.stop()
+            return
+        if info.is_playing:
+            self._is_playing = True
+            if not self._timer.isActive():
+                self._timer.start()
+        else:
+            if self._is_playing:
+                self._is_playing = False
+                self._timer.stop()
+                self._position_save_ticks = 0
 
     def _refresh_queue_ui(self) -> None:
         selected_row = self._queue_list.currentRow()
@@ -769,6 +895,8 @@ class AnkiTubeDock(QDockWidget):
         self.add_video_url(url)
 
     def add_urls_from_mime(self, mime, *, at_top: bool = False) -> bool:
+        if self._is_system_mode():
+            return False
         video_ids = extract_video_ids_from_mime(mime)
         if at_top:
             video_ids = list(reversed(video_ids))
@@ -897,6 +1025,9 @@ class AnkiTubeDock(QDockWidget):
             self._load_current_video(autoplay=self._bridge.pending_play)
 
     def _play_current(self) -> None:
+        if self._is_system_mode():
+            self._play_system_media()
+            return
         if not self._current_item():
             showWarning("Add at least one video to the queue first.")
             return
@@ -916,12 +1047,46 @@ class AnkiTubeDock(QDockWidget):
         )
         self._refresh_queue_ui()
 
+    def _play_system_media(self) -> None:
+        info = self._media.get_now_playing()
+        self._now_playing = info
+        self._update_now_playing_label()
+        if not info.supported:
+            showWarning(
+                "System media control is only available on macOS.\n\n"
+                "Enable the embedded YouTube player in Settings, "
+                "or use AnkiTube on macOS."
+            )
+            return
+        if not self._budget.has_time():
+            self._paused_for_budget = True
+            showWarning(
+                "Your watch-time budget is empty.\n\n"
+                "Review flashcards to earn more time."
+            )
+            return
+        self._paused_for_budget = False
+        if not self._media.play():
+            showWarning(
+                "Could not start system media playback.\n\n"
+                "Make sure an app has Now Playing media available."
+            )
+            return
+        self._is_playing = True
+        if not self._timer.isActive():
+            self._timer.start()
+        self._on_system_media_poll()
+
     def _pause_playback(self) -> None:
         self._is_playing = False
         self._timer.stop()
         self._position_save_ticks = 0
-        self._bridge.pause()
-        self._refresh_queue_ui()
+        if self._is_system_mode():
+            self._media.pause()
+            self._on_system_media_poll()
+        else:
+            self._bridge.pause()
+            self._refresh_queue_ui()
 
     def _toggle_playback(self) -> None:
         if self._is_playing:
@@ -930,22 +1095,33 @@ class AnkiTubeDock(QDockWidget):
             self._play_current()
 
     def _seek_relative(self, delta_seconds: float) -> None:
-        if not self._current_item():
+        if self._is_system_mode() or not self._current_item():
             return
         self._bridge.eval_js(f"window.ankittube.seekBy({delta_seconds});")
 
     def _adjust_volume(self, delta: int) -> None:
-        if not self._current_item():
+        if self._is_system_mode() or not self._current_item():
             return
         self._bridge.eval_js(f"window.ankittube.adjustVolume({delta});")
 
     def _toggle_captions(self) -> None:
-        if not self._current_item():
+        if self._is_system_mode() or not self._current_item():
             return
         self._bridge.eval_js("window.ankittube.toggleCaptions();")
 
     def hold_pause_begin(self) -> None:
         if self._hold_paused:
+            return
+        if self._is_system_mode():
+            self._hold_paused = True
+            self._was_playing_before_hold = self._is_playing
+            if self._is_playing:
+                self._is_playing = False
+                self._timer.stop()
+                self._position_save_ticks = 0
+                self._media.pause()
+                self._update_now_playing_label()
+            log("hold pause begin (system)")
             return
         if not self._current_item():
             return
@@ -970,16 +1146,22 @@ class AnkiTubeDock(QDockWidget):
         )
         self._was_playing_before_hold = False
         if should_resume:
-            item = self._current_item()
-            if item:
-                self._bridge.pending_play = True
-                self._bridge.eval_js(
-                    f"window.ankittube.resumeOrPlay({json.dumps(item.video_id)});"
-                )
-                self._refresh_queue_ui()
+            if self._is_system_mode():
+                self._media.play()
+                self._on_system_media_poll()
+            else:
+                item = self._current_item()
+                if item:
+                    self._bridge.pending_play = True
+                    self._bridge.eval_js(
+                        f"window.ankittube.resumeOrPlay({json.dumps(item.video_id)});"
+                    )
+                    self._refresh_queue_ui()
         log("hold pause end")
 
     def _play_next(self) -> None:
+        if self._is_system_mode():
+            return
         if not self._queue.items:
             return
         if self._queue.current_index < len(self._queue.items) - 1:
@@ -990,6 +1172,8 @@ class AnkiTubeDock(QDockWidget):
             self._pause_playback()
 
     def _open_fullscreen(self) -> None:
+        if self._is_system_mode():
+            return
         if self._fullscreen and self._fullscreen.isVisible():
             self._fullscreen.showFullScreen()
             self._fullscreen.raise_()
@@ -1034,6 +1218,8 @@ class AnkiTubeDock(QDockWidget):
             return
         self._budget.save()
         self._update_budget_ui()
+        if self._is_system_mode():
+            return
         self._poll_playback_position()
         self._position_save_ticks += 1
         if self._position_save_ticks >= 10:
@@ -1044,5 +1230,11 @@ class AnkiTubeDock(QDockWidget):
         self._paused_for_budget = True
         self._is_playing = False
         self._timer.stop()
-        self._bridge.pause()
-        self._refresh_queue_ui()
+        if self._is_system_mode():
+            self._media.pause()
+            self._update_now_playing_label()
+            log("budget exhausted: paused system media")
+        else:
+            self._bridge.pause()
+            self._refresh_queue_ui()
+            log("budget exhausted: paused YouTube player")

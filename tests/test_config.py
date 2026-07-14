@@ -18,6 +18,9 @@ def test_get_config_merges_defaults(mock_mw) -> None:
     config = config_mod.get_config("AnkiTube")
     assert config["seconds_per_card"] == config_mod.DEFAULTS["seconds_per_card"]
     assert config["config_version"] == config_mod.DEFAULTS["config_version"]
+    assert config["media_mode"] == config_mod.MEDIA_MODE_SYSTEM
+    assert config["auto_resume_on_budget"] is False
+    assert config["system_media_poll_ms"] == 500
 
 
 def test_save_preferences_updates_only_preference_keys(mock_mw) -> None:
@@ -36,8 +39,30 @@ def test_migrate_config_sets_version() -> None:
     assert migrated["config_version"] == config_mod.CONFIG_VERSION
 
 
+def test_migrate_config_normalizes_media_mode_and_poll() -> None:
+    config_mod = load_addon_module("config", "config.py")
+    migrated = config_mod.migrate_config(
+        {"media_mode": "invalid", "system_media_poll_ms": 50}
+    )
+    assert migrated["media_mode"] == config_mod.MEDIA_MODE_SYSTEM
+    assert migrated["system_media_poll_ms"] == 200
+    migrated2 = config_mod.migrate_config(
+        {"media_mode": "youtube", "system_media_poll_ms": 9000}
+    )
+    assert migrated2["media_mode"] == config_mod.MEDIA_MODE_YOUTUBE
+    assert migrated2["system_media_poll_ms"] == 5000
+
+
+def test_is_system_media_mode() -> None:
+    config_mod = load_addon_module("config", "config.py")
+    assert config_mod.is_system_media_mode({"media_mode": "system"}) is True
+    assert config_mod.is_system_media_mode({"media_mode": "youtube"}) is False
+
+
 def test_preference_defaults_subset() -> None:
     config_mod = load_addon_module("config", "config.py")
     defaults = config_mod.preference_defaults()
     assert set(defaults) <= config_mod.PREFERENCE_KEYS
     assert "seconds_per_card" in defaults
+    assert "media_mode" in defaults
+    assert "auto_resume_on_budget" in defaults

@@ -13,9 +13,12 @@ These keys can be changed in **Tools → AnkiTube → Settings...** or edited he
 | `max_budget_seconds` | `600` | Maximum banked watch time (10 minutes) |
 | `dock_area` | `"right"` | Dock side: `"left"` or `"right"` |
 | `show_dock_in_review_only` | `false` | Hide the dock outside review mode |
-| `youtube_show_controls` | `true` | Show YouTube player controls |
-| `youtube_show_fullscreen` | `true` | Show YouTube fullscreen button |
-| `dock_show_playback_buttons` | `true` | Show Play/Pause/Next/Fullscreen below player |
+| `media_mode` | `"system"` | `"system"` (macOS Now Playing) or `"youtube"` (legacy embedded player) |
+| `auto_resume_on_budget` | `false` | Auto-resume media when budget is restored after exhaustion |
+| `system_media_poll_ms` | `500` | How often to poll Now Playing status (200–5000 ms) |
+| `youtube_show_controls` | `true` | Show YouTube player controls (legacy mode) |
+| `youtube_show_fullscreen` | `true` | Show YouTube fullscreen button (legacy mode) |
+| `dock_show_playback_buttons` | `true` | Show Play/Pause (and legacy Next/Fullscreen) controls |
 | `debug_logging` | `false` | Write diagnostic log to `ankittube.log` |
 
 ## Runtime state (auto-managed)
@@ -23,7 +26,7 @@ These keys can be changed in **Tools → AnkiTube → Settings...** or edited he
 | Key | Description |
 |-----|-------------|
 | `budget_seconds` | Current watch-time balance |
-| `queue` | Saved video queue |
+| `queue` | Saved video queue (legacy YouTube mode) |
 | `current_index` | Index of the current queue item |
 | `positions` | Playback positions per video ID |
 | `lifetime_earned_seconds` | Total seconds earned from reviews |
