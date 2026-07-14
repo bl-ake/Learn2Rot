@@ -37,6 +37,7 @@ RUNTIME_KEYS = frozenset(
         "lifetime_earned_seconds",
         "dock_panel_sizes",
         "queue_visible",
+        "dock_visible",
         "dock_width",
     }
 )

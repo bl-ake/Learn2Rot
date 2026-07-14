@@ -59,14 +59,15 @@ def _on_budget_changed() -> None:
 
 
 def show_dock() -> None:
-    dock = get_dock()
-    dock.show()
-    dock.raise_()
+    get_dock().show_dock()
 
 
 def toggle_dock() -> None:
     dock = get_dock()
-    dock.setVisible(not dock.isVisible())
+    if dock.isVisible():
+        dock.hide_dock()
+    else:
+        dock.show_dock()
 
 
 def open_settings() -> None:
@@ -127,7 +128,11 @@ def on_state_change(new_state, old_state) -> None:
     if not config.get("show_dock_in_review_only", False):
         return
     dock = get_dock()
-    dock.setVisible(new_state == "review")
+    if new_state == "review":
+        if dock._dock_visible:
+            dock.show_dock()
+    else:
+        dock.hide()
 
 
 def setup_menu() -> None:

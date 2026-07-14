@@ -95,6 +95,7 @@ class AnkiTubeDock(QDockWidget):
         self._player_shortcut_filter: PlayerShortcutFilter | None = None
         self._fullscreen: Optional[FullscreenPlayer] = None
         self._queue_visible = True
+        self._dock_visible = True
         self._queue_splitter_sizes: Optional[list[int]] = None
         self._layout_restored = False
         self._startup_complete = False
@@ -319,9 +320,7 @@ class AnkiTubeDock(QDockWidget):
 
     def apply_settings(self) -> None:
         self._apply_playback_button_visibility()
-        config = self._config()
-        if config.get("show_dock_in_review_only", False):
-            self.setVisible(mw.state == "review")
+        self._apply_dock_visibility()
         self._ensure_dock_placement(force_docked=True)
         was_playing = self._is_playing
         self._bridge.player_ready = False
@@ -331,6 +330,29 @@ class AnkiTubeDock(QDockWidget):
         self._web.load_url(player_url)
         if self._fullscreen is not None:
             self._fullscreen._web.load_url(player_url)
+
+    def show_dock(self) -> None:
+        self._dock_visible = True
+        self._ensure_dock_placement(force_docked=True)
+        self.show()
+        self.raise_()
+        self._schedule_layout_settle()
+        self._save_state()
+
+    def hide_dock(self) -> None:
+        self._dock_visible = False
+        self.hide()
+        self._save_state()
+
+    def _apply_dock_visibility(self) -> None:
+        if not self._dock_visible:
+            self.hide()
+            return
+        if self._config().get("show_dock_in_review_only", False) and mw.state != "review":
+            self.hide()
+            return
+        self._ensure_dock_placement(force_docked=True)
+        self.show()
 
     def _pause_dock_player(self) -> None:
         self._bridge.pause()
@@ -436,6 +458,7 @@ class AnkiTubeDock(QDockWidget):
         self._apply_target_layout()
 
     def _finish_initial_layout(self) -> None:
+        self._apply_dock_visibility()
         if not self._queue_visible:
             self._apply_queue_visibility()
         self._schedule_layout_settle()
@@ -449,15 +472,14 @@ class AnkiTubeDock(QDockWidget):
             event.ignore()
             self._redock_from_float()
             return
+        self._dock_visible = False
         super().closeEvent(event)
+        self._save_state()
 
     def _redock_from_float(self) -> None:
         self.setFloating(False)
         self._ensure_dock_placement(force_docked=True)
-        if self._config().get("show_dock_in_review_only", False) and mw.state != "review":
-            self.hide()
-        else:
-            self.show()
+        self._apply_dock_visibility()
 
     def resizeEvent(self, event: QResizeEvent) -> None:
         super().resizeEvent(event)
@@ -528,6 +550,7 @@ class AnkiTubeDock(QDockWidget):
         self._positions_cache = positions
         self._lifetime_earned_seconds = lifetime_earned
         self._queue_visible = queue_visible
+        self._dock_visible = self._persistence.load_dock_visible()
         self._refresh_queue_ui()
         QTimer.singleShot(0, self._backfill_missing_durations)
         log(
@@ -598,6 +621,7 @@ class AnkiTubeDock(QDockWidget):
             positions=self._positions_cache,
             lifetime_earned_seconds=self._lifetime_earned_seconds,
             queue_visible=self._queue_visible,
+            dock_visible=self._dock_visible,
             dock_panel_sizes=panel_sizes,
             target_dock_width=self._target_dock_width,
         )

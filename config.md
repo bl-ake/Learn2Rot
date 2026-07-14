@@ -29,4 +29,5 @@ These keys can be changed in **Tools → AnkiTube → Settings...** or edited he
 | `lifetime_earned_seconds` | Total seconds earned from reviews |
 | `dock_panel_sizes` | Splitter sizes for queue vs player |
 | `queue_visible` | Whether the queue list is visible |
+| `dock_visible` | Whether the dock panel is open |
 | `dock_width` | Saved dock width in pixels |

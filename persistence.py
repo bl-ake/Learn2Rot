@@ -73,6 +73,10 @@ class DockPersistence:
         visible = queue_visible if isinstance(queue_visible, bool) else True
         return positions, lifetime_earned, visible
 
+    def load_dock_visible(self) -> bool:
+        dock_visible = self.config().get("dock_visible", True)
+        return dock_visible if isinstance(dock_visible, bool) else True
+
     def save_state(
         self,
         queue: VideoQueue,
@@ -80,6 +84,7 @@ class DockPersistence:
         positions: dict[str, float],
         lifetime_earned_seconds: int,
         queue_visible: bool,
+        dock_visible: bool,
         dock_panel_sizes: Optional[list[int]] = None,
         target_dock_width: Optional[int] = None,
     ) -> None:
@@ -96,6 +101,7 @@ class DockPersistence:
         config["positions"] = dict(positions)
         config["lifetime_earned_seconds"] = lifetime_earned_seconds
         config["queue_visible"] = queue_visible
+        config["dock_visible"] = dock_visible
         if dock_panel_sizes is not None and queue_visible:
             config["dock_panel_sizes"] = dock_panel_sizes
         if target_dock_width and target_dock_width >= 200:
