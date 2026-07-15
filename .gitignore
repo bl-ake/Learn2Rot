@@ -4,6 +4,10 @@ __pycache__/
 *$py.class
 *.so
 
+# Platform-specific wheels for Anki (pip install -r requirements.txt -t vendor)
+# Keep local for development; rebuild per OS/Python before packaging.
+vendor/
+
 # macOS
 .DS_Store
 

@@ -21,6 +21,7 @@ def test_get_config_merges_defaults(mock_mw) -> None:
     assert config["media_mode"] == config_mod.MEDIA_MODE_SYSTEM
     assert config["auto_resume_on_budget"] is False
     assert config["system_media_poll_ms"] == 500
+    assert config["show_menubar_watch_time"] is True
 
 
 def test_save_preferences_updates_only_preference_keys(mock_mw) -> None:
@@ -66,3 +67,19 @@ def test_preference_defaults_subset() -> None:
     assert "seconds_per_card" in defaults
     assert "media_mode" in defaults
     assert "auto_resume_on_budget" in defaults
+    assert defaults["show_menubar_watch_time"] is True
+
+
+def test_migrate_config_normalizes_show_menubar_watch_time() -> None:
+    config_mod = load_addon_module("config", "config.py")
+    migrated = config_mod.migrate_config({"show_menubar_watch_time": 0})
+    assert migrated["show_menubar_watch_time"] is False
+    migrated2 = config_mod.migrate_config({})
+    assert migrated2["show_menubar_watch_time"] is True
+
+
+def test_migrate_config_renames_toolbar_key_to_menubar() -> None:
+    config_mod = load_addon_module("config", "config.py")
+    migrated = config_mod.migrate_config({"show_toolbar_watch_time": False})
+    assert migrated["show_menubar_watch_time"] is False
+    assert "show_toolbar_watch_time" not in migrated

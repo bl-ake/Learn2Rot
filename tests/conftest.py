@@ -20,4 +20,8 @@ import addon_loader  # noqa: E402,F401 — installs Anki mocks
 
 @pytest.fixture
 def mock_mw() -> MagicMock:
-    return sys.modules["aqt"].mw
+    mw = sys.modules["aqt"].mw
+    stored = getattr(mw, "_ankitube_test_config", None)
+    if isinstance(stored, dict):
+        stored.clear()
+    return mw

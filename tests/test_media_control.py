@@ -39,7 +39,9 @@ def test_darwin_get_now_playing_parses_json() -> None:
     def runner(args: list[str]) -> subprocess.CompletedProcess[str]:
         return SimpleNamespace(returncode=0, stdout=json.dumps(payload), stderr="")
 
-    controller = media_mod.DarwinMediaController(runner=runner)
+    controller = media_mod.DarwinMediaController(
+        runner=runner, command_sender=lambda _cmd: True
+    )
     info = controller.get_now_playing()
     assert info.title == "Song"
     assert info.artist == "Artist"
@@ -49,16 +51,31 @@ def test_darwin_get_now_playing_parses_json() -> None:
 
 def test_darwin_pause_sends_command() -> None:
     media_mod = load_addon_module("media_control", "media_control.py")
-    seen: list[list[str]] = []
+    seen: list[int] = []
 
-    def runner(args: list[str]) -> subprocess.CompletedProcess[str]:
-        seen.append(args)
-        return SimpleNamespace(returncode=0, stdout="ok", stderr="")
+    def sender(command: int) -> bool:
+        seen.append(command)
+        return True
 
-    controller = media_mod.DarwinMediaController(runner=runner)
+    controller = media_mod.DarwinMediaController(
+        runner=lambda _args: SimpleNamespace(returncode=0, stdout="{}", stderr=""),
+        command_sender=sender,
+    )
     assert controller.pause() is True
-    assert seen
-    assert seen[0][-1] == "1"
+    assert seen == [media_mod._CMD_PAUSE]
+
+
+def test_darwin_pause_falls_back_to_stop() -> None:
+    media_mod = load_addon_module("media_control", "media_control.py")
+    seen: list[int] = []
+
+    def sender(command: int) -> bool:
+        seen.append(command)
+        return command == media_mod._CMD_STOP
+
+    controller = media_mod.DarwinMediaController(command_sender=sender)
+    assert controller.pause() is True
+    assert seen == [media_mod._CMD_PAUSE, media_mod._CMD_STOP]
 
 
 def test_darwin_timeout_returns_cached_not_playing() -> None:
@@ -67,7 +84,9 @@ def test_darwin_timeout_returns_cached_not_playing() -> None:
     def runner(_args: list[str]) -> subprocess.CompletedProcess[str]:
         raise subprocess.TimeoutExpired(cmd="osascript", timeout=2)
 
-    controller = media_mod.DarwinMediaController(runner=runner)
+    controller = media_mod.DarwinMediaController(
+        runner=runner, command_sender=lambda _cmd: True
+    )
     controller._last = media_mod.NowPlayingInfo(title="Cached", artist="Art")
     info = controller.get_now_playing()
     assert info.title == "Cached"

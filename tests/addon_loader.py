@@ -16,6 +16,7 @@ _PKG = "ankitube_test"
 def _ensure_aqt_mock() -> MagicMock:
     mw = MagicMock()
     stored: dict = {}
+    mw._ankitube_test_config = stored  # type: ignore[attr-defined]
 
     def get_config(_module: str) -> dict:
         return dict(stored)

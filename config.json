@@ -8,7 +8,8 @@
     "youtube_show_controls": true,
     "youtube_show_fullscreen": true,
     "dock_show_playback_buttons": true,
-    "debug_logging": false,
+    "show_menubar_watch_time": true,
+    "debug_logging": true,
     "media_mode": "system",
     "auto_resume_on_budget": false,
     "system_media_poll_ms": 500

@@ -40,7 +40,10 @@ class ConfigDialog(QDialog):
         self.seconds_per_card.setRange(1, 3600)
         self.seconds_per_card.setSuffix(" sec")
         self.seconds_per_card.setValue(int(config.get("seconds_per_card", 15)))
-        form.addRow("Seconds earned per reviewed card:", self.seconds_per_card)
+        form.addRow(
+            "Seconds per card / cube (watch time earned):",
+            self.seconds_per_card,
+        )
 
         self.starting_budget = QSpinBox()
         self.starting_budget.setRange(0, 86400)
@@ -116,11 +119,27 @@ class ConfigDialog(QDialog):
         )
         form.addRow("Dock playback buttons:", self.dock_show_playback_buttons)
 
+        self.show_menubar_watch_time = QCheckBox(
+            "Show remaining watch time in the macOS menu bar (default on)"
+        )
+        self.show_menubar_watch_time.setChecked(
+            bool(config.get("show_menubar_watch_time", True))
+        )
+        form.addRow("Menu bar watch time:", self.show_menubar_watch_time)
+
         layout.addLayout(form)
+        layout.addWidget(
+            QLabel(
+                "Budget is shown as cubes that fall over the Anki window "
+                "(one cube per “seconds per card”). They bounce off the card "
+                "and pile at the bottom; cubes disappear as watch time is spent."
+            )
+        )
         layout.addWidget(
             QLabel(
                 "By default, AnkiTube meters and pauses macOS Now Playing media "
                 "(Spotify, Music, browser tabs that report Now Playing, etc.). "
+                "Play/Pause: Tools → AnkiTube or the P key. "
                 "Lockout is best-effort for apps that publish to Now Playing."
             )
         )
@@ -157,6 +176,7 @@ class ConfigDialog(QDialog):
                 "youtube_show_controls": self.youtube_show_controls.isChecked(),
                 "youtube_show_fullscreen": self.youtube_show_fullscreen.isChecked(),
                 "dock_show_playback_buttons": self.dock_show_playback_buttons.isChecked(),
+                "show_menubar_watch_time": self.show_menubar_watch_time.isChecked(),
                 "media_mode": (
                     MEDIA_MODE_YOUTUBE
                     if self.legacy_youtube.isChecked()

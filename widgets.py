@@ -118,6 +118,14 @@ class PlayerShortcutFilter(QObject):
         fullscreen = self._dock._fullscreen
         if fullscreen is not None and fullscreen.isVisible():
             return True
+        # System mode: hotkeys work without the dock being visible.
+        if system_mode:
+            focus = QApplication.focusWidget()
+            if focus is not None and isinstance(
+                focus, (QLineEdit, QTextEdit, QPlainTextEdit, QAbstractSpinBox)
+            ):
+                return False
+            return True
         if not self._dock.isVisible():
             return False
         focus = QApplication.focusWidget()

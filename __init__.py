@@ -5,7 +5,17 @@
 
 from __future__ import annotations
 
+import sys
+from pathlib import Path
+
 ADDON_MODULE = __name__
+
+# Bundled third-party packages (see requirements.txt / vendor/).
+_VENDOR_DIR = Path(__file__).resolve().parent / "vendor"
+if _VENDOR_DIR.is_dir():
+    _vendor_path = str(_VENDOR_DIR)
+    if _vendor_path not in sys.path:
+        sys.path.insert(0, _vendor_path)
 
 
 def initialize_addon() -> None:

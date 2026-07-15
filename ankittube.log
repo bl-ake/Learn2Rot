@@ -1,0 +1,14 @@
+[2026-07-14 12:56:35] cube settled y=228.0 floor=250.0
+[2026-07-14 12:56:35] cube settled y=578.0 floor=600.0
+[2026-07-14 12:56:35] physics wake_off_floor n=1 reason='test' floor=350.0
+[2026-07-14 12:56:40] cube settled y=228.0 floor=250.0
+[2026-07-14 12:56:40] cube settled y=578.0 floor=600.0
+[2026-07-14 12:56:40] physics wake_off_floor n=1 reason='test' floor=350.0
+[2026-07-14 23:08:57] menubar: set_addon_module module='AnkiTube'
+[2026-07-14 23:08:57] menubar: native NSStatusItem controller created
+[2026-07-14 23:08:57] menubar: show_menubar_watch_time=True
+[2026-07-14 23:08:57] menubar: NSStatusItem created nsapp=True bar=True item=True button=True
+[2026-07-14 23:08:57] menubar: title set to '2:05' tip='AnkiTube watch time remaining: 2:05'
+[2026-07-14 23:09:00] menubar: shutdown
+[2026-07-14 23:09:00] menubar: status item removed
+[2026-07-14 23:09:00] menubar: controller cleared

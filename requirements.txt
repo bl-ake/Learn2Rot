@@ -1,0 +1,4 @@
+# Runtime deps for Anki. Install into vendor/ with Anki's Python, e.g.:
+#   /path/to/AnkiProgramFiles/.venv/bin/python -m pip install -r requirements.txt -t vendor
+pymunk>=7.0,<8
+rumps>=0.4.0; sys_platform == "darwin"

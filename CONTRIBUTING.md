@@ -37,6 +37,22 @@ Use the [bug report template](.github/ISSUE_TEMPLATE/bug_report.md) and include:
 
 Clone into your Anki add-ons folder and restart Anki. When packaging locally, use `python package.py --no-update-mod` to avoid bumping `manifest.json` during iteration.
 
+### Runtime dependencies (`vendor/`)
+
+Budget overlay physics needs [pymunk](https://www.pymunk.org/). The macOS menu bar helper needs [rumps](https://github.com/jaredks/rumps) (and PyObjC). Install both into `vendor/` with the **same Python Anki ships** (Anki 25.x uses 3.13):
+
+```bash
+# Prefer Anki's uv-managed venv when present:
+"$HOME/Library/Application Support/AnkiProgramFiles/.venv/bin/python" \
+  -m pip install -r requirements.txt -t vendor
+```
+
+For tests/dev in a virtualenv:
+
+```bash
+pip install -r requirements-dev.txt
+```
+
 ## Code style
 
 - Match existing module layout and naming.

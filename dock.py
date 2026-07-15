@@ -96,6 +96,7 @@ class AnkiTubeDock(QDockWidget):
         self._player_shortcut_filter: PlayerShortcutFilter | None = None
         self._fullscreen: Optional[FullscreenPlayer] = None
         self._queue_visible = True
+        # System media mode hides the dock; YouTube mode restores saved visibility.
         self._dock_visible = True
         self._queue_splitter_sizes: Optional[list[int]] = None
         self._layout_restored = False
@@ -145,6 +146,11 @@ class AnkiTubeDock(QDockWidget):
         self._mw_resize_filter = MainWindowResizeFilter(self)
         mw.installEventFilter(self._mw_resize_filter)
         self._startup_grace_timer.start()
+
+        if self._is_system_mode():
+            self._dock_visible = False
+            self.hide()
+            log("system mode: dock hidden (budget cubes overlay is primary UI)")
 
     def _build_ui(self) -> None:
         container = AnkiTubePanel(self)
@@ -347,7 +353,9 @@ class AnkiTubeDock(QDockWidget):
 
     def _apply_media_mode_ui(self) -> None:
         system = self._is_system_mode()
-        self._now_playing_label.setVisible(system)
+        self._now_playing_label.setVisible(False)
+        self._budget_label.setVisible(not system)
+        self._budget_bar.setVisible(not system)
         for widget in (
             self._queue_list,
             self._add_button,
@@ -363,9 +371,10 @@ class AnkiTubeDock(QDockWidget):
         if system:
             self._top_panel.setMinimumHeight(0)
             self._bottom_panel.setMinimumHeight(0)
-            self._now_playing_label.setText(self._now_playing.display_label())
             QTimer.singleShot(0, self._collapse_splitter_for_system_mode)
         else:
+            self._budget_label.setVisible(True)
+            self._budget_bar.setVisible(True)
             self._bottom_panel.setMinimumHeight(200)
             self._apply_queue_visibility()
         self._apply_playback_button_visibility()
@@ -381,18 +390,21 @@ class AnkiTubeDock(QDockWidget):
     def _apply_playback_button_visibility(self) -> None:
         show = bool(self._config().get("dock_show_playback_buttons", True))
         system = self._is_system_mode()
-        self._play_button.setVisible(show)
-        self._pause_button.setVisible(show)
+        # System mode uses Tools menu / hotkeys for play-pause; hide dock chrome.
+        self._play_button.setVisible(show and not system)
+        self._pause_button.setVisible(show and not system)
         self._next_button.setVisible(show and not system)
         self._fullscreen_button.setVisible(show and not system)
 
     def apply_settings(self) -> None:
         self._apply_media_mode_ui()
-        self._apply_dock_visibility()
-        self._ensure_dock_placement(force_docked=True)
         if self._is_system_mode():
+            self._dock_visible = False
+            self.hide()
             self._start_system_media_polling()
             return
+        self._apply_dock_visibility()
+        self._ensure_dock_placement(force_docked=True)
         self._stop_system_media_polling()
         was_playing = self._is_playing
         self._bridge.player_ready = False
@@ -405,7 +417,11 @@ class AnkiTubeDock(QDockWidget):
             self._fullscreen._web.load_url(player_url)
 
     def show_dock(self) -> None:
-        self._dock_visible = True
+        if self._is_system_mode():
+            # Allow manual peek via Show Player, but mark visible preference separately.
+            self._dock_visible = True
+        else:
+            self._dock_visible = True
         self._ensure_dock_placement(force_docked=True)
         self.show()
         self.raise_()
@@ -418,6 +434,9 @@ class AnkiTubeDock(QDockWidget):
         self._save_state()
 
     def _apply_dock_visibility(self) -> None:
+        if self._is_system_mode():
+            self.hide()
+            return
         if not self._dock_visible:
             self.hide()
             return
@@ -802,6 +821,9 @@ class AnkiTubeDock(QDockWidget):
         self._now_playing = info
         self._update_now_playing_label()
         if self._hold_paused:
+            if not self._budget.has_time():
+                self._paused_for_budget = True
+                self._media.pause()
             return
         if not info.supported:
             if self._is_playing:
@@ -809,8 +831,11 @@ class AnkiTubeDock(QDockWidget):
                 self._timer.stop()
             return
         if not self._budget.has_time():
+            self._paused_for_budget = True
+            # Always enforce pause while out of budget so newly started media
+            # is stopped even if Now Playing briefly lags behind reality.
+            self._media.pause()
             if info.is_playing:
-                self._media.pause()
                 log("system media lockout: paused while out of budget")
             if self._is_playing:
                 self._is_playing = False
@@ -1213,11 +1238,14 @@ class AnkiTubeDock(QDockWidget):
     def _on_timer_tick(self) -> None:
         if not self._is_playing:
             return
+        before = self._budget.seconds
         if not self._budget.consume_second():
             self._handle_budget_exhausted()
+            self._notify_overlay_spend()
             return
         self._budget.save()
         self._update_budget_ui()
+        self._notify_overlay_spend(before=before)
         if self._is_system_mode():
             return
         self._poll_playback_position()
@@ -1226,15 +1254,44 @@ class AnkiTubeDock(QDockWidget):
             self._position_save_ticks = 0
             self._capture_playback_position(self._save_state)
 
+    def _notify_overlay_spend(self, before: int | None = None) -> None:
+        try:
+            from . import hooks
+
+            hooks._sync_overlay(falling=False)
+        except Exception as exc:
+            log(f"overlay spend sync failed: {exc}")
+
     def _handle_budget_exhausted(self) -> None:
         self._paused_for_budget = True
         self._is_playing = False
         self._timer.stop()
         if self._is_system_mode():
             self._media.pause()
+            # Immediate follow-up pause covers clients that ignore the first
+            # command or report playing until after a short delay.
+            QTimer.singleShot(150, lambda: self._enforce_system_media_lockout(0))
             self._update_now_playing_label()
             log("budget exhausted: paused system media")
         else:
             self._bridge.pause()
             self._refresh_queue_ui()
             log("budget exhausted: paused YouTube player")
+        self._notify_overlay_spend()
+
+    def _enforce_system_media_lockout(self, attempt: int = 0) -> None:
+        if not self._is_system_mode() or self._budget.has_time():
+            return
+        self._paused_for_budget = True
+        self._media.pause()
+        info = self._media.get_now_playing()
+        self._now_playing = info
+        self._update_now_playing_label()
+        if info.is_playing and attempt < 5:
+            log(
+                f"system media lockout: still playing after pause; "
+                f"retrying ({attempt + 1})"
+            )
+            QTimer.singleShot(
+                250, lambda: self._enforce_system_media_lockout(attempt + 1)
+            )

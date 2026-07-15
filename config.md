@@ -8,7 +8,7 @@ These keys can be changed in **Tools → AnkiTube → Settings...** or edited he
 
 | Key | Default | Description |
 |-----|---------|-------------|
-| `seconds_per_card` | `15` | Watch seconds earned per reviewed card |
+| `seconds_per_card` | `15` | Watch seconds earned per reviewed card (also one cube) |
 | `starting_budget_seconds` | `0` | Initial watch budget for new profiles |
 | `max_budget_seconds` | `600` | Maximum banked watch time (10 minutes) |
 | `dock_area` | `"right"` | Dock side: `"left"` or `"right"` |
@@ -19,6 +19,7 @@ These keys can be changed in **Tools → AnkiTube → Settings...** or edited he
 | `youtube_show_controls` | `true` | Show YouTube player controls (legacy mode) |
 | `youtube_show_fullscreen` | `true` | Show YouTube fullscreen button (legacy mode) |
 | `dock_show_playback_buttons` | `true` | Show Play/Pause (and legacy Next/Fullscreen) controls |
+| `show_menubar_watch_time` | `true` | Show remaining watch time in the macOS menu bar |
 | `debug_logging` | `false` | Write diagnostic log to `ankittube.log` |
 
 ## Runtime state (auto-managed)

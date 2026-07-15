@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/bl-ake/AnkiTube/actions/workflows/ci.yml/badge.svg)](https://github.com/bl-ake/AnkiTube/actions/workflows/ci.yml)
 
-An Anki add-on that meters watch time you've earned by reviewing cards. By default on macOS, it observes and pauses system Now Playing media (Spotify, Music, browser tabs that report Now Playing, and similar). An embedded YouTube queue/player remains available as a legacy mode.
+An Anki add-on that meters watch time you've earned by reviewing cards. Accrued time appears as cubes that fall over the Anki window, bounce off the flashcard, and pile at the bottom. On macOS, AnkiTube can pause system Now Playing media when your budget runs out. An embedded YouTube queue/player remains available as a legacy mode.
 
 ## Requirements
 
@@ -42,46 +42,44 @@ python package.py --no-update-mod
 
 ## Usage
 
-Open **Tools → AnkiTube → Show Player** (or **Toggle Player**).
+1. Review cards — each answer drops a cube worth **seconds per card** of watch time
+2. Cubes bounce off the card surface and collect above Anki’s review bottom bar
+3. Play media (macOS Now Playing); budget drains while playing and cubes disappear
+4. When time runs out, AnkiTube pauses Now Playing and keeps re-pausing while you’re out of time
 
-1. Review cards to earn watch-time budget
-2. Play media in another app (or press Play in the dock)
-3. When your budget runs out, AnkiTube pauses Now Playing and keeps re-pausing while you are out of time
+A small **Watch:** timer in the review overlay (top-left) shows time remaining. On macOS, the same countdown appears in the menu bar by default via a small helper process (toggle in Settings).
 
-Legacy YouTube mode: enable **Use embedded YouTube player (legacy)** in Settings, then add videos via paste, drag-and-drop, or `+`.
+Controls:
+
+- **Tools → AnkiTube → Play / Pause / Play/Pause**
+- Keyboard: `P` play/pause; hold `Option` (macOS) / `Alt` to temporarily pause
+
+Legacy YouTube mode: enable **Use embedded YouTube player (legacy)** in Settings, then **Show Player** for the dock queue/player.
 
 Settings are under **Tools → AnkiTube → Settings...**
 
 Useful options:
 
-- **Seconds earned per reviewed card** — how much watch time each card is worth (default: 15s)
+- **Seconds per card / cube** — earn amount and cube size (default: 15s)
 - **Maximum watch budget** — cap on banked time (default: 10 minutes)
-- **Auto-resume media when budget is restored** — off by default; when on, resumes after earning time following exhaustion
+- **Auto-resume media when budget is restored** — off by default
+- **Show remaining watch time in the menu bar** — on by default (macOS)
 - **Use embedded YouTube player (legacy)** — restore the in-dock queue/player
-- **Show dock in review only** — hide the dock outside the review screen
-- **Dock side** — dock on the left or right side of the main window
 
-### Limits (system media mode)
+### Limits
 
-Lockout only applies to apps that publish to macOS Now Playing. Sources that do not register can still make sound. Enforcement is best-effort (poll + pause), not a hard OS block.
+- Cube lockout / pause only covers apps that publish to macOS Now Playing
+- Card colliders use `#qa` / `.card` bounding boxes; unusual templates may not bounce perfectly
+- Overlay is mouse-transparent so Anki stays fully clickable
 
 ## Keyboard shortcuts
-
-When the dock is open and you're not typing in a text field:
 
 | Key | Action |
 |-----|--------|
 | `P` | Play / pause |
 | Hold `Option` (macOS) / `Alt` | Temporarily pause |
 
-Legacy YouTube mode also supports:
-
-| Key | Action |
-|-----|--------|
-| `G` | Toggle fullscreen |
-| `C` | Toggle captions |
-| `←` / `→` | Seek backward / forward |
-| `↑` / `↓` | Volume up / down |
+Legacy YouTube mode also supports `G` fullscreen, `C` captions, arrows seek/volume.
 
 ## Debug logging
 

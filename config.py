@@ -27,6 +27,7 @@ PREFERENCE_KEYS = frozenset(
         "youtube_show_controls",
         "youtube_show_fullscreen",
         "dock_show_playback_buttons",
+        "show_menubar_watch_time",
         "debug_logging",
         "media_mode",
         "auto_resume_on_budget",
@@ -58,6 +59,7 @@ DEFAULTS: dict[str, Any] = {
     "youtube_show_controls": True,
     "youtube_show_fullscreen": True,
     "dock_show_playback_buttons": True,
+    "show_menubar_watch_time": True,
     "debug_logging": False,
     "media_mode": MEDIA_MODE_SYSTEM,
     "auto_resume_on_budget": False,
@@ -91,6 +93,13 @@ def migrate_config(config: dict[str, Any]) -> dict[str, Any]:
         poll_ms = 500
     config["system_media_poll_ms"] = max(200, min(5000, poll_ms))
     config["auto_resume_on_budget"] = bool(config.get("auto_resume_on_budget", False))
+    if "show_menubar_watch_time" not in config and "show_toolbar_watch_time" in config:
+        config["show_menubar_watch_time"] = config.pop("show_toolbar_watch_time")
+    else:
+        config.pop("show_toolbar_watch_time", None)
+    config["show_menubar_watch_time"] = bool(
+        config.get("show_menubar_watch_time", True)
+    )
     return config
 
 

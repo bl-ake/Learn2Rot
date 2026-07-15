@@ -65,6 +65,7 @@ EXCLUDE_NAMES = frozenset(
         "screenshots",
         "tests",
         "requirements-dev.txt",
+        "requirements.txt",
         "pytest.ini",
         "package.py",
     }
