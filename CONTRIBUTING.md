@@ -39,7 +39,7 @@ Clone into your Anki add-ons folder and restart Anki. When packaging locally, us
 
 ### Runtime dependencies (`vendor/`)
 
-Budget overlay physics needs [pymunk](https://www.pymunk.org/). The macOS menu bar helper needs [rumps](https://github.com/jaredks/rumps) (and PyObjC). Install both into `vendor/` with the **same Python Anki ships** (Anki 25.x uses 3.13):
+Budget overlay physics needs [pymunk](https://www.pymunk.org/). Anki Media Timer (menu bar + Now Playing lockout) needs [rumps](https://github.com/jaredks/rumps) (and PyObjC). Install both into `vendor/` with the **same Python Anki ships** (Anki 25.x uses 3.13):
 
 ```bash
 # Prefer Anki's uv-managed venv when present:

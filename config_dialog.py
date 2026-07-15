@@ -120,12 +120,19 @@ class ConfigDialog(QDialog):
         form.addRow("Dock playback buttons:", self.dock_show_playback_buttons)
 
         self.show_menubar_watch_time = QCheckBox(
-            "Show remaining watch time in the macOS menu bar (default on)"
+            "Show Anki Media Timer icon in the macOS menu bar (default on)"
         )
         self.show_menubar_watch_time.setChecked(
             bool(config.get("show_menubar_watch_time", True))
         )
-        form.addRow("Menu bar watch time:", self.show_menubar_watch_time)
+        form.addRow("Menu bar icon:", self.show_menubar_watch_time)
+
+        self.quit_with_anki = QCheckBox(
+            "Quit Anki Media Timer when Anki quits "
+            "(uncheck to keep pausing media after Anki closes)"
+        )
+        self.quit_with_anki.setChecked(bool(config.get("quit_with_anki", True)))
+        form.addRow("Quit with Anki:", self.quit_with_anki)
 
         layout.addLayout(form)
         layout.addWidget(
@@ -137,10 +144,11 @@ class ConfigDialog(QDialog):
         )
         layout.addWidget(
             QLabel(
-                "By default, AnkiTube meters and pauses macOS Now Playing media "
-                "(Spotify, Music, browser tabs that report Now Playing, etc.). "
-                "Play/Pause: Tools → AnkiTube or the P key. "
-                "Lockout is best-effort for apps that publish to Now Playing."
+                "By default, Anki Media Timer meters and pauses macOS Now Playing media "
+                "(Spotify, Music, browser tabs that report Now Playing, etc.) "
+                "in the background. Play/Pause: Tools → AnkiTube or the P key. "
+                "Lockout is best-effort for apps that publish to Now Playing. "
+                "Uncheck “Quit with Anki” to keep Anki Media Timer running after Anki closes."
             )
         )
         layout.addWidget(
@@ -177,6 +185,7 @@ class ConfigDialog(QDialog):
                 "youtube_show_fullscreen": self.youtube_show_fullscreen.isChecked(),
                 "dock_show_playback_buttons": self.dock_show_playback_buttons.isChecked(),
                 "show_menubar_watch_time": self.show_menubar_watch_time.isChecked(),
+                "quit_with_anki": self.quit_with_anki.isChecked(),
                 "media_mode": (
                     MEDIA_MODE_YOUTUBE
                     if self.legacy_youtube.isChecked()

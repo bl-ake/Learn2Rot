@@ -1,5 +1,5 @@
 {
-    "config_version": 2,
+    "config_version": 3,
     "seconds_per_card": 15,
     "starting_budget_seconds": 0,
     "max_budget_seconds": 600,
@@ -9,6 +9,7 @@
     "youtube_show_fullscreen": true,
     "dock_show_playback_buttons": true,
     "show_menubar_watch_time": true,
+    "quit_with_anki": true,
     "debug_logging": true,
     "media_mode": "system",
     "auto_resume_on_budget": false,

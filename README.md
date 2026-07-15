@@ -47,7 +47,7 @@ python package.py --no-update-mod
 3. Play media (macOS Now Playing); budget drains while playing and cubes disappear
 4. When time runs out, AnkiTube pauses Now Playing and keeps re-pausing while you’re out of time
 
-A small **Watch:** timer in the review overlay (top-left) shows time remaining. On macOS, the same countdown appears in the menu bar by default via a small helper process (toggle in Settings).
+A small **Watch:** timer in the review overlay (top-left) shows time remaining. On macOS, the same countdown appears in the menu bar by default via **Anki Media Timer**, a background helper that also owns budget drain and pause enforcement (toggle the icon in Settings). Optionally keep it running after Anki quits (**Quit with Anki** off) so media stays locked out until you earn more time.
 
 Controls:
 
@@ -63,12 +63,14 @@ Useful options:
 - **Seconds per card / cube** — earn amount and cube size (default: 15s)
 - **Maximum watch budget** — cap on banked time (default: 10 minutes)
 - **Auto-resume media when budget is restored** — off by default
-- **Show remaining watch time in the menu bar** — on by default (macOS)
+- **Show Anki Media Timer icon in the menu bar** — on by default (macOS); turn off to hide the icon while keeping pause enforcement
+- **Quit with Anki** — on by default; turn off to keep Anki Media Timer pausing media after Anki closes
 - **Use embedded YouTube player (legacy)** — restore the in-dock queue/player
 
 ### Limits
 
 - Cube lockout / pause only covers apps that publish to macOS Now Playing
+- After Anki quits, lockout continues only when **Quit with Anki** is off (macOS system mode)
 - Card colliders use `#qa` / `.card` bounding boxes; unusual templates may not bounce perfectly
 - Overlay is mouse-transparent so Anki stays fully clickable
 

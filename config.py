@@ -11,7 +11,7 @@ from aqt import mw
 
 from ._version import __version__  # noqa: F401 — exposed for packaging
 
-CONFIG_VERSION = 2
+CONFIG_VERSION = 3
 
 MEDIA_MODE_SYSTEM = "system"
 MEDIA_MODE_YOUTUBE = "youtube"
@@ -28,6 +28,7 @@ PREFERENCE_KEYS = frozenset(
         "youtube_show_fullscreen",
         "dock_show_playback_buttons",
         "show_menubar_watch_time",
+        "quit_with_anki",
         "debug_logging",
         "media_mode",
         "auto_resume_on_budget",
@@ -60,6 +61,7 @@ DEFAULTS: dict[str, Any] = {
     "youtube_show_fullscreen": True,
     "dock_show_playback_buttons": True,
     "show_menubar_watch_time": True,
+    "quit_with_anki": True,
     "debug_logging": False,
     "media_mode": MEDIA_MODE_SYSTEM,
     "auto_resume_on_budget": False,
@@ -100,6 +102,7 @@ def migrate_config(config: dict[str, Any]) -> dict[str, Any]:
     config["show_menubar_watch_time"] = bool(
         config.get("show_menubar_watch_time", True)
     )
+    config["quit_with_anki"] = bool(config.get("quit_with_anki", True))
     return config
 
 

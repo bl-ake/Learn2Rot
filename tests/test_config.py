@@ -22,6 +22,7 @@ def test_get_config_merges_defaults(mock_mw) -> None:
     assert config["auto_resume_on_budget"] is False
     assert config["system_media_poll_ms"] == 500
     assert config["show_menubar_watch_time"] is True
+    assert config["quit_with_anki"] is True
 
 
 def test_save_preferences_updates_only_preference_keys(mock_mw) -> None:
@@ -68,6 +69,7 @@ def test_preference_defaults_subset() -> None:
     assert "media_mode" in defaults
     assert "auto_resume_on_budget" in defaults
     assert defaults["show_menubar_watch_time"] is True
+    assert defaults["quit_with_anki"] is True
 
 
 def test_migrate_config_normalizes_show_menubar_watch_time() -> None:
@@ -76,6 +78,14 @@ def test_migrate_config_normalizes_show_menubar_watch_time() -> None:
     assert migrated["show_menubar_watch_time"] is False
     migrated2 = config_mod.migrate_config({})
     assert migrated2["show_menubar_watch_time"] is True
+
+
+def test_migrate_config_normalizes_quit_with_anki() -> None:
+    config_mod = load_addon_module("config", "config.py")
+    migrated = config_mod.migrate_config({"quit_with_anki": 0})
+    assert migrated["quit_with_anki"] is False
+    migrated2 = config_mod.migrate_config({})
+    assert migrated2["quit_with_anki"] is True
 
 
 def test_migrate_config_renames_toolbar_key_to_menubar() -> None:

@@ -15,7 +15,7 @@ from aqt.qt import QAction, QMenu, QTimer
 from aqt.qt import QDesktopServices, QUrl
 from aqt.utils import qconnect, showInfo
 
-from . import menubar_budget
+from . import watch_daemon
 from .config import get_config, is_system_media_mode
 from .config_dialog import ConfigDialog
 from .logger import clear_log, log, log_path
@@ -30,18 +30,14 @@ _dock: Optional["AnkiTubeDock"] = None
 _budget: Optional["BudgetManager"] = None
 _overlay: Optional["BudgetOverlayController"] = None
 _addon_module: str = ""
+_syncing_from_daemon = False
 
 
 def set_addon_module(module: str) -> None:
     global _addon_module
     _addon_module = module
-    menubar_budget.set_addon_module(module)
-    menubar_budget.set_seconds_provider(lambda: get_budget().seconds)
-    menubar_budget.set_menu_callbacks(
-        play=play_media,
-        pause=pause_media,
-        settings=open_settings,
-    )
+    watch_daemon.set_addon_module(module)
+    watch_daemon.set_budget_sync_callback(_on_daemon_budget_sync)
 
 
 def get_budget() -> "BudgetManager":
@@ -99,7 +95,22 @@ def _sync_overlay(*, falling: bool) -> None:
 def _on_budget_changed() -> None:
     if _dock is not None:
         _dock.on_budget_changed()
-    menubar_budget.update_menubar_watch_time()
+
+
+def _on_daemon_budget_sync(seconds: int, is_playing: bool) -> None:
+    """Apply daemon-owned budget to Anki UI (overlay / dock)."""
+    global _syncing_from_daemon
+    if _budget is None:
+        return
+    _syncing_from_daemon = True
+    try:
+        if _budget.seconds != seconds:
+            _budget.seconds = seconds
+            _sync_overlay(falling=False)
+        if _dock is not None:
+            _dock.on_daemon_playback_state(is_playing)
+    finally:
+        _syncing_from_daemon = False
 
 
 def show_dock() -> None:
@@ -133,7 +144,7 @@ def open_settings() -> None:
             _dock.apply_settings()
         _sync_overlay(falling=False)
         get_overlay().ensure_raised()
-        menubar_budget.update_menubar_watch_time(force=True)
+        watch_daemon.refresh_watch_daemon(budget_seconds=get_budget().seconds)
 
 
 def open_debug_log() -> None:
@@ -152,20 +163,24 @@ def clear_debug_log() -> None:
 
 
 def on_profile_open() -> None:
+    config = get_config(_addon_module)
     log(
-        "profile open: hydrating dock/overlay/menubar "
+        "profile open: hydrating dock/overlay/watch_daemon "
         f"(show_menubar_watch_time="
-        f"{bool(get_config(_addon_module).get('show_menubar_watch_time', True))})"
+        f"{bool(config.get('show_menubar_watch_time', True))} "
+        f"quit_with_anki={bool(config.get('quit_with_anki', True))})"
     )
+    budget = get_budget()
     get_dock()
     _hydrate_overlay()
     get_overlay().set_review_active(mw.state == "review")
-    menubar_budget.update_menubar_watch_time(force=True)
+    watch_daemon.start_watch_daemon(budget_seconds=budget.seconds, force=True)
 
 
 def on_profile_close() -> None:
     global _dock, _budget, _overlay
-    menubar_budget.shutdown_menubar_watch_time()
+    quit_helper = bool(get_config(_addon_module).get("quit_with_anki", True))
+    watch_daemon.shutdown_watch_daemon(quit_helper=quit_helper)
     if _overlay is not None:
         _overlay.shutdown()
         _overlay = None

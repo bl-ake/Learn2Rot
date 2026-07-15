@@ -47,6 +47,7 @@ from .utils import (
     format_seconds,
     normalize_youtube_url,
 )
+from . import watch_daemon
 from .widgets import (
     AnkiTubePanel,
     FullscreenPlayer,
@@ -133,7 +134,8 @@ class AnkiTubeDock(QDockWidget):
         )
 
         if self._is_system_mode():
-            self._start_system_media_polling()
+            # Drain / Now Playing lockout live in watch_helper.py.
+            pass
         else:
             self._initialize_youtube_player()
 
@@ -401,7 +403,8 @@ class AnkiTubeDock(QDockWidget):
         if self._is_system_mode():
             self._dock_visible = False
             self.hide()
-            self._start_system_media_polling()
+            self._timer.stop()
+            self._stop_system_media_polling()
             return
         self._apply_dock_visibility()
         self._ensure_dock_placement(force_docked=True)
@@ -759,8 +762,22 @@ class AnkiTubeDock(QDockWidget):
 
     def on_budget_changed(self) -> None:
         self._update_budget_ui()
+        if self._is_system_mode():
+            # Exhaustion / pause are enforced by the watch daemon.
+            return
         if not self._budget.has_time() and self._is_playing:
             self._handle_budget_exhausted()
+
+    def on_daemon_playback_state(self, is_playing: bool) -> None:
+        """Reflect Now Playing state owned by the watch daemon."""
+        if not self._is_system_mode():
+            return
+        self._is_playing = bool(is_playing)
+        if not self._budget.has_time():
+            self._paused_for_budget = True
+        elif is_playing:
+            self._paused_for_budget = False
+        self._update_budget_ui()
 
     def on_card_answered(self) -> None:
         had_time = self._budget.has_time()
@@ -775,16 +792,12 @@ class AnkiTubeDock(QDockWidget):
             f"card answered: +{reward}s "
             f"(history={self._reward_history}, earned={self._lifetime_earned_seconds})"
         )
-        if (
-            self._is_system_mode()
-            and bool(self._config().get("auto_resume_on_budget", False))
-            and self._paused_for_budget
-            and not had_time
-            and self._budget.has_time()
-        ):
-            self._paused_for_budget = False
-            self._media.play()
-            log("auto-resumed system media after budget restore")
+        if self._is_system_mode():
+            # Daemon owns drain/auto-resume; push the earned seconds.
+            watch_daemon.credit_watch_time(reward)
+            _ = had_time
+        else:
+            watch_daemon.publish_budget(self._budget.seconds)
         self._update_now_playing_label()
 
     def on_review_undo(self) -> None:
@@ -801,6 +814,10 @@ class AnkiTubeDock(QDockWidget):
             f"review undo: -{reward}s "
             f"(history={self._reward_history}, earned={self._lifetime_earned_seconds})"
         )
+        if self._is_system_mode():
+            watch_daemon.subtract_watch_time(reward)
+        else:
+            watch_daemon.publish_budget(self._budget.seconds)
 
     def _update_budget_ui(self) -> None:
         seconds = self._budget.seconds
@@ -815,41 +832,12 @@ class AnkiTubeDock(QDockWidget):
         self._now_playing_label.setText(self._now_playing.display_label())
 
     def _on_system_media_poll(self) -> None:
+        # Legacy UI poll only — lockout/drain run in the watch daemon.
         if not self._is_system_mode():
             return
         info = self._media.get_now_playing()
         self._now_playing = info
         self._update_now_playing_label()
-        if self._hold_paused:
-            if not self._budget.has_time():
-                self._paused_for_budget = True
-                self._media.pause()
-            return
-        if not info.supported:
-            if self._is_playing:
-                self._is_playing = False
-                self._timer.stop()
-            return
-        if not self._budget.has_time():
-            self._paused_for_budget = True
-            # Always enforce pause while out of budget so newly started media
-            # is stopped even if Now Playing briefly lags behind reality.
-            self._media.pause()
-            if info.is_playing:
-                log("system media lockout: paused while out of budget")
-            if self._is_playing:
-                self._is_playing = False
-                self._timer.stop()
-            return
-        if info.is_playing:
-            self._is_playing = True
-            if not self._timer.isActive():
-                self._timer.start()
-        else:
-            if self._is_playing:
-                self._is_playing = False
-                self._timer.stop()
-                self._position_save_ticks = 0
 
     def _refresh_queue_ui(self) -> None:
         selected_row = self._queue_list.currentRow()
@@ -1097,10 +1085,8 @@ class AnkiTubeDock(QDockWidget):
                 "Make sure an app has Now Playing media available."
             )
             return
+        # Drain / lockout are owned by the watch daemon.
         self._is_playing = True
-        if not self._timer.isActive():
-            self._timer.start()
-        self._on_system_media_poll()
 
     def _pause_playback(self) -> None:
         self._is_playing = False
@@ -1108,7 +1094,6 @@ class AnkiTubeDock(QDockWidget):
         self._position_save_ticks = 0
         if self._is_system_mode():
             self._media.pause()
-            self._on_system_media_poll()
         else:
             self._bridge.pause()
             self._refresh_queue_ui()
@@ -1173,7 +1158,8 @@ class AnkiTubeDock(QDockWidget):
         if should_resume:
             if self._is_system_mode():
                 self._media.play()
-                self._on_system_media_poll()
+                self._is_playing = True
+                self._update_now_playing_label()
             else:
                 item = self._current_item()
                 if item:
@@ -1236,6 +1222,9 @@ class AnkiTubeDock(QDockWidget):
         )
 
     def _on_timer_tick(self) -> None:
+        if self._is_system_mode():
+            # Watch daemon owns the clock in system media mode.
+            return
         if not self._is_playing:
             return
         before = self._budget.seconds
@@ -1246,8 +1235,7 @@ class AnkiTubeDock(QDockWidget):
         self._budget.save()
         self._update_budget_ui()
         self._notify_overlay_spend(before=before)
-        if self._is_system_mode():
-            return
+        watch_daemon.publish_budget(self._budget.seconds)
         self._poll_playback_position()
         self._position_save_ticks += 1
         if self._position_save_ticks >= 10:
@@ -1267,31 +1255,17 @@ class AnkiTubeDock(QDockWidget):
         self._is_playing = False
         self._timer.stop()
         if self._is_system_mode():
+            # Should not run for system mode (daemon-owned); keep a safety pause.
             self._media.pause()
-            # Immediate follow-up pause covers clients that ignore the first
-            # command or report playing until after a short delay.
-            QTimer.singleShot(150, lambda: self._enforce_system_media_lockout(0))
             self._update_now_playing_label()
-            log("budget exhausted: paused system media")
+            log("budget exhausted: paused system media (dock safety path)")
         else:
             self._bridge.pause()
             self._refresh_queue_ui()
             log("budget exhausted: paused YouTube player")
+            watch_daemon.publish_budget(0)
         self._notify_overlay_spend()
 
     def _enforce_system_media_lockout(self, attempt: int = 0) -> None:
-        if not self._is_system_mode() or self._budget.has_time():
-            return
-        self._paused_for_budget = True
-        self._media.pause()
-        info = self._media.get_now_playing()
-        self._now_playing = info
-        self._update_now_playing_label()
-        if info.is_playing and attempt < 5:
-            log(
-                f"system media lockout: still playing after pause; "
-                f"retrying ({attempt + 1})"
-            )
-            QTimer.singleShot(
-                250, lambda: self._enforce_system_media_lockout(attempt + 1)
-            )
+        # Lockout is owned by the watch daemon; keep as no-op for safety callers.
+        return
