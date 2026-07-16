@@ -142,6 +142,7 @@ def open_settings() -> None:
     if dialog.exec():
         if _dock is not None:
             _dock.apply_settings()
+        get_overlay().apply_settings()
         _sync_overlay(falling=False)
         get_overlay().ensure_raised()
         watch_daemon.refresh_watch_daemon(budget_seconds=get_budget().seconds)

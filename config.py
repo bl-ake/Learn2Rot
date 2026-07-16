@@ -11,7 +11,7 @@ from aqt import mw
 
 from ._version import __version__  # noqa: F401 — exposed for packaging
 
-CONFIG_VERSION = 3
+CONFIG_VERSION = 4
 
 MEDIA_MODE_SYSTEM = "system"
 MEDIA_MODE_YOUTUBE = "youtube"
@@ -32,6 +32,10 @@ PREFERENCE_KEYS = frozenset(
         "debug_logging",
         "media_mode",
         "auto_resume_on_budget",
+        "show_budget_cubes",
+        "cube_bounds_left_pct",
+        "cube_bounds_right_pct",
+        "show_overlay_timer",
         "system_media_poll_ms",
     }
 )
@@ -65,6 +69,10 @@ DEFAULTS: dict[str, Any] = {
     "debug_logging": False,
     "media_mode": MEDIA_MODE_SYSTEM,
     "auto_resume_on_budget": False,
+    "show_budget_cubes": True,
+    "cube_bounds_left_pct": 0,
+    "cube_bounds_right_pct": 100,
+    "show_overlay_timer": True,
     "system_media_poll_ms": 500,
 }
 
@@ -95,6 +103,8 @@ def migrate_config(config: dict[str, Any]) -> dict[str, Any]:
         poll_ms = 500
     config["system_media_poll_ms"] = max(200, min(5000, poll_ms))
     config["auto_resume_on_budget"] = bool(config.get("auto_resume_on_budget", False))
+    config["show_budget_cubes"] = bool(config.get("show_budget_cubes", True))
+    config["show_overlay_timer"] = bool(config.get("show_overlay_timer", True))
     if "show_menubar_watch_time" not in config and "show_toolbar_watch_time" in config:
         config["show_menubar_watch_time"] = config.pop("show_toolbar_watch_time")
     else:
@@ -103,7 +113,32 @@ def migrate_config(config: dict[str, Any]) -> dict[str, Any]:
         config.get("show_menubar_watch_time", True)
     )
     config["quit_with_anki"] = bool(config.get("quit_with_anki", True))
+    config["cube_bounds_left_pct"], config["cube_bounds_right_pct"] = (
+        normalize_cube_bounds_pct(
+            config.get("cube_bounds_left_pct", 0),
+            config.get("cube_bounds_right_pct", 100),
+        )
+    )
     return config
+
+
+def normalize_cube_bounds_pct(left: Any, right: Any) -> tuple[int, int]:
+    """Clamp left/right percentages and ensure a usable gap."""
+    try:
+        left_i = int(left)
+    except (TypeError, ValueError):
+        left_i = 0
+    try:
+        right_i = int(right)
+    except (TypeError, ValueError):
+        right_i = 100
+    left_i = max(0, min(100, left_i))
+    right_i = max(0, min(100, right_i))
+    if right_i <= left_i:
+        right_i = min(100, left_i + 5)
+        if right_i <= left_i:
+            left_i = max(0, right_i - 5)
+    return left_i, right_i
 
 
 def save_preferences(addon_module: str, preferences: dict[str, Any]) -> None:

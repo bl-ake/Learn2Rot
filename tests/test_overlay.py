@@ -77,11 +77,10 @@ def test_physics_world_spawn_and_despawn() -> None:
 def test_physics_settles_on_custom_floor() -> None:
     overlay = load_addon_module("overlay", "overlay.py")
     world = overlay.PhysicsWorld(width=200, height=300, floor_y=250)
+    world.set_horizontal_bounds(0.2, 0.5)
     cube = world.spawn_falling()
-    assert (
-        abs(cube.x + cube.size / 2 - world.width * overlay._SPAWN_X_FRACTION)
-        < overlay._SPAWN_X_JITTER + 1
-    )
+    x_min, x_max = world.fill_x_range(cube.size)
+    assert x_min <= cube.x <= x_max + 0.01
     assert cube.omega != 0
     cube.x = 50
     cube.y = 200
@@ -96,6 +95,20 @@ def test_physics_settles_on_custom_floor() -> None:
     assert abs(alive[0].y + alive[0].size - 250) < 3.0
     # Pymunk may leave a tiny residual spin on sleeping bodies.
     assert abs(alive[0].omega) < 0.05
+
+
+def test_spawn_falling_stays_within_bounds() -> None:
+    overlay = load_addon_module("overlay", "overlay.py")
+    world = overlay.PhysicsWorld(width=400, height=300, floor_y=300)
+    world.set_horizontal_bounds(0.25, 0.75)
+    x_min, x_max = world.fill_x_range()
+    for _ in range(40):
+        cube = world.spawn_falling()
+        assert x_min <= cube.x <= x_max + 0.01
+    world.clear()
+    world.spawn_settled_pile(8)
+    for cube in world.alive_cubes():
+        assert x_min <= cube.x <= x_max + 1.0
 
 
 def test_one_way_platform_does_not_trap_at_top() -> None:
@@ -162,3 +175,59 @@ def test_rehome_does_not_move_midair_cubes() -> None:
     world.update_boundaries()
     world.rehome_for_floor_change(old_floor, reason="test")
     assert floating.y == old_y
+
+
+def test_hit_test_and_drag_moves_cube() -> None:
+    overlay = load_addon_module("overlay", "overlay.py")
+    world = overlay.PhysicsWorld(width=200, height=400, floor_y=400)
+    world.spawn_settled_pile(1)
+    cube = world.alive_cubes()[0]
+    cx = cube.x + cube.size / 2
+    cy = cube.y + cube.size / 2
+    assert world.hit_test(cx, cy) is cube
+    assert world.hit_test(0.0, 0.0) is None
+
+    world.begin_drag(cube, cx, cy)
+    assert world.drag_cube is cube
+    assert cube.settled is False
+    world.update_drag(cx + 40, cy - 30)
+    for _ in range(20):
+        world.step()
+    assert abs((cube.x + cube.size / 2) - (cx + 40)) < 12
+    assert abs((cube.y + cube.size / 2) - (cy - 30)) < 12
+    world.end_drag()
+    assert world.drag_cube is None
+
+
+def test_clear_ends_drag() -> None:
+    overlay = load_addon_module("overlay", "overlay.py")
+    world = overlay.PhysicsWorld(width=200, height=400, floor_y=400)
+    world.spawn_settled_pile(1)
+    cube = world.alive_cubes()[0]
+    world.begin_drag(cube, cube.x + cube.size / 2, cube.y + cube.size / 2)
+    world.clear()
+    assert world.drag_cube is None
+    assert world.cube_count() == 0
+
+
+def test_despawn_skips_dragged_cube() -> None:
+    overlay = load_addon_module("overlay", "overlay.py")
+    world = overlay.PhysicsWorld(width=200, height=400, floor_y=400)
+    world.spawn_settled_pile(2)
+    dragged = world.alive_cubes()[0]
+    world.begin_drag(dragged, dragged.x + 1, dragged.y + 1)
+    world.begin_despawn_random(2)
+    assert dragged.despawn_t is None
+    assert world.cube_count() == 1
+    assert world.drag_cube is dragged
+
+
+def test_point_in_rects() -> None:
+    overlay = load_addon_module("overlay", "overlay.py")
+    rects = [(10.0, 20.0, 30.0, 40.0)]
+    assert overlay.point_in_rects(15, 25, rects) is True
+    assert overlay.point_in_rects(10, 20, rects) is True
+    assert overlay.point_in_rects(40, 60, rects) is True
+    assert overlay.point_in_rects(9, 25, rects) is False
+    assert overlay.point_in_rects(15, 61, rects) is False
+    assert overlay.point_in_rects(15, 25, []) is False

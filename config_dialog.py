@@ -12,14 +12,25 @@ from aqt.qt import (
     QDialog,
     QDialogButtonBox,
     QFormLayout,
+    QHBoxLayout,
     QLabel,
+    QPushButton,
     QSpinBox,
     QVBoxLayout,
+    QWidget,
 )
-from aqt.utils import showInfo
+from aqt.utils import askUser, qconnect, showInfo
 
+from . import watch_daemon
 from .budget import BudgetManager
-from .config import MEDIA_MODE_SYSTEM, MEDIA_MODE_YOUTUBE, get_config, save_preferences
+from .config import (
+    MEDIA_MODE_SYSTEM,
+    MEDIA_MODE_YOUTUBE,
+    get_config,
+    is_system_media_mode,
+    save_preferences,
+)
+from .utils import format_seconds
 
 
 class ConfigDialog(QDialog):
@@ -57,6 +68,18 @@ class ConfigDialog(QDialog):
         self.max_budget.setValue(int(config.get("max_budget_seconds", 600)))
         form.addRow("Maximum watch budget (default 10 min):", self.max_budget)
 
+        current_budget_row = QWidget()
+        current_budget_layout = QHBoxLayout(current_budget_row)
+        current_budget_layout.setContentsMargins(0, 0, 0, 0)
+        self._current_budget_label = QLabel()
+        self.clear_budget_button = QPushButton("Clear")
+        self.clear_budget_button.setToolTip("Set remaining watch time to zero")
+        qconnect(self.clear_budget_button.clicked, self._clear_current_budget)
+        current_budget_layout.addWidget(self._current_budget_label, 1)
+        current_budget_layout.addWidget(self.clear_budget_button)
+        self._refresh_current_budget_label()
+        form.addRow("Current watch budget:", current_budget_row)
+
         self.show_dock_in_review_only = QCheckBox(
             "Hide the dock outside the review screen"
         )
@@ -88,6 +111,40 @@ class ConfigDialog(QDialog):
             bool(config.get("auto_resume_on_budget", False))
         )
         form.addRow("Auto-resume:", self.auto_resume_on_budget)
+
+        self.show_budget_cubes = QCheckBox(
+            "Show falling budget cubes over the Anki window (default on)"
+        )
+        self.show_budget_cubes.setChecked(
+            bool(config.get("show_budget_cubes", True))
+        )
+        form.addRow("Budget cubes:", self.show_budget_cubes)
+
+        bounds_row = QWidget()
+        bounds_layout = QHBoxLayout(bounds_row)
+        bounds_layout.setContentsMargins(0, 0, 0, 0)
+        self.cube_bounds_left = QSpinBox()
+        self.cube_bounds_left.setRange(0, 95)
+        self.cube_bounds_left.setSuffix("%")
+        self.cube_bounds_left.setValue(int(config.get("cube_bounds_left_pct", 0)))
+        self.cube_bounds_right = QSpinBox()
+        self.cube_bounds_right.setRange(5, 100)
+        self.cube_bounds_right.setSuffix("%")
+        self.cube_bounds_right.setValue(int(config.get("cube_bounds_right_pct", 100)))
+        bounds_layout.addWidget(QLabel("Left:"))
+        bounds_layout.addWidget(self.cube_bounds_left)
+        bounds_layout.addWidget(QLabel("Right:"))
+        bounds_layout.addWidget(self.cube_bounds_right)
+        bounds_layout.addStretch(1)
+        form.addRow("Cube drop bounds:", bounds_row)
+
+        self.show_overlay_timer = QCheckBox(
+            "Show watch timer in the top-left of the Anki window (default on)"
+        )
+        self.show_overlay_timer.setChecked(
+            bool(config.get("show_overlay_timer", True))
+        )
+        form.addRow("Overlay timer:", self.show_overlay_timer)
 
         self.debug_logging = QCheckBox(
             "Write events to ankittube.log in your Anki profile folder"
@@ -137,9 +194,11 @@ class ConfigDialog(QDialog):
         layout.addLayout(form)
         layout.addWidget(
             QLabel(
-                "Budget is shown as cubes that fall over the Anki window "
+                "When enabled, budget is shown as cubes that fall over the Anki window "
                 "(one cube per “seconds per card”). They bounce off the card "
-                "and pile at the bottom; cubes disappear as watch time is spent."
+                "and pile at the bottom; cubes disappear as watch time is spent. "
+                "Left/Right bounds are percentages of the window width — cubes drop "
+                "randomly between them. Uncheck Budget cubes to hide them completely."
             )
         )
         layout.addWidget(
@@ -154,7 +213,7 @@ class ConfigDialog(QDialog):
         layout.addWidget(
             QLabel(
                 "Current watch budget is saved automatically. "
-                "Review flashcards to earn more time."
+                "Review flashcards to earn more time, or use Clear to reset it."
             )
         )
         layout.addWidget(
@@ -170,6 +229,37 @@ class ConfigDialog(QDialog):
         buttons.accepted.connect(self._save)
         buttons.rejected.connect(self.reject)
         layout.addWidget(buttons)
+
+    def _refresh_current_budget_label(self) -> None:
+        self._current_budget_label.setText(format_seconds(self._budget.seconds))
+        self.clear_budget_button.setEnabled(self._budget.seconds > 0)
+
+    def _clear_current_budget(self) -> None:
+        current = self._budget.seconds
+        if current <= 0:
+            showInfo("Watch budget is already empty.")
+            return
+        if not askUser(
+            f"Clear {format_seconds(current)} of remaining watch time?",
+            parent=self,
+        ):
+            return
+
+        self._budget.seconds = 0
+        self._budget.save()
+        config = get_config(self._addon_module)
+        if is_system_media_mode(config):
+            watch_daemon.subtract_watch_time(current)
+        else:
+            watch_daemon.publish_budget(0)
+        self._refresh_current_budget_label()
+        try:
+            from . import hooks
+
+            hooks._sync_overlay(falling=False)
+        except Exception:
+            pass
+        showInfo("Current watch budget cleared.")
 
     def _save(self) -> None:
         save_preferences(
@@ -192,6 +282,10 @@ class ConfigDialog(QDialog):
                     else MEDIA_MODE_SYSTEM
                 ),
                 "auto_resume_on_budget": self.auto_resume_on_budget.isChecked(),
+                "show_budget_cubes": self.show_budget_cubes.isChecked(),
+                "cube_bounds_left_pct": self.cube_bounds_left.value(),
+                "cube_bounds_right_pct": self.cube_bounds_right.value(),
+                "show_overlay_timer": self.show_overlay_timer.isChecked(),
             },
         )
         self._budget.seconds = self._budget.seconds

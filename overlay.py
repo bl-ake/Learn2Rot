@@ -1,7 +1,7 @@
 # Copyright (C) 2026 bl-ake
 # SPDX-License-Identifier: AGPL-3.0-or-later
 
-"""Mouse-transparent budget cubes overlay with Pymunk physics."""
+"""Budget cubes overlay with Pymunk physics and click-drag interaction."""
 
 from __future__ import annotations
 
@@ -16,12 +16,15 @@ from aqt.qt import (
     QColor,
     QEvent,
     QFont,
+    QMouseEvent,
     QObject,
     QPainter,
     QPaintEvent,
     QPen,
     QPoint,
+    QRect,
     QRectF,
+    QRegion,
     Qt,
     QTimer,
     QWidget,
@@ -41,11 +44,10 @@ _FRICTION = 0.85
 _SETTLE_SPEED = 28.0
 _CUBE_SIZE = 22.0
 _SPAWN_JITTER = 40.0
-_SPAWN_X_FRACTION = 0.2  # drop from ~1/5 of the way across the window
-_SPAWN_X_JITTER = 8.0
+_MIN_BOUNDS_WIDTH_FRAC = 0.05  # keep at least 5% of window width
 _DESPAWN_FADE_SEC = 0.35
-_SPIN_MIN = -8.0  # radians / sec
-_SPIN_MAX = 8.0
+_SPIN_MIN = 3.0  # radians / sec (magnitude; sign chosen at random)
+_SPIN_MAX = 10.0
 _SPIN_DAMP = 0.992
 _SLIDE_KICK = 220.0
 _STICK_TIME_SEC = 0.25
@@ -60,6 +62,10 @@ _DEBUG_STATUS_INTERVAL_SEC = 1.0
 # the top and cubes settled there permanently.
 _MIN_FLOOR_HEIGHT_FRACTION = 0.45
 _FLOOR_CHANGE_WAKE_PX = 8.0
+_DRAG_MAX_FORCE = 1.2e5
+_DRAG_MASK_PAD = 4
+# Keep the watch HUD paintable when the cube input mask is active.
+_HUD_MASK_RECT = QRect(0, 0, 240, 48)
 
 # Collision types for Pymunk handlers
 COLLIDER_TYPE = 1
@@ -185,6 +191,17 @@ def normalize_card_platform(
     return (x, y, w, h)
 
 
+def point_in_rects(
+    px: float,
+    py: float,
+    rects: Sequence[tuple[float, float, float, float]],
+) -> bool:
+    for x, y, w, h in rects:
+        if w > 0 and h > 0 and x <= px <= x + w and y <= py <= y + h:
+            return True
+    return False
+
+
 class Cube:
     """Wrapper mapping dynamic attributes to clean property gates on PyMunk Body."""
 
@@ -297,6 +314,9 @@ class PhysicsWorld:
     width: float = 400.0
     height: float = 600.0
     floor_y: float = 600.0
+    # Horizontal fill band as fractions of width (0–1). Cubes spawn and pile here.
+    bounds_left_frac: float = 0.0
+    bounds_right_frac: float = 1.0
     cubes: list[Cube] = field(default_factory=list)
     _colliders: list[tuple[float, float, float, float]] = field(default_factory=list, init=False, repr=False)
 
@@ -308,11 +328,37 @@ class PhysicsWorld:
 
         self.wall_shapes: list[pymunk.Segment] = []
         self.platform_shapes: list[pymunk.Segment] = []
+        self._drag_cube: Optional[Cube] = None
+        self._mouse_body: Optional[pymunk.Body] = None
+        self._drag_joint: Optional[pymunk.PivotJoint] = None
+        self._drag_target: Optional[tuple[float, float]] = None
 
-        self.update_boundaries()
+        self.set_horizontal_bounds(self.bounds_left_frac, self.bounds_right_frac)
 
         # One-way platforms (Pymunk 7+: set Arbiter.process_collision, do not return bool).
         self.space.on_collision(COLLIDER_TYPE, CUBE_TYPE, pre_solve=self._platform_pre_solve)
+
+    def set_horizontal_bounds(self, left_frac: float, right_frac: float) -> None:
+        """Clamp and apply the horizontal band cubes may fill; rebuilds walls."""
+        left = max(0.0, min(1.0, float(left_frac)))
+        right = max(0.0, min(1.0, float(right_frac)))
+        if right - left < _MIN_BOUNDS_WIDTH_FRAC:
+            mid = (left + right) / 2.0
+            left = max(0.0, mid - _MIN_BOUNDS_WIDTH_FRAC / 2.0)
+            right = min(1.0, left + _MIN_BOUNDS_WIDTH_FRAC)
+            if right - left < _MIN_BOUNDS_WIDTH_FRAC:
+                left = max(0.0, right - _MIN_BOUNDS_WIDTH_FRAC)
+        self.bounds_left_frac = left
+        self.bounds_right_frac = right
+        self.update_boundaries()
+
+    def fill_x_range(self, size: float = _CUBE_SIZE) -> tuple[float, float]:
+        """Inclusive min/max for a cube's left edge within the fill bounds."""
+        left = self.width * self.bounds_left_frac
+        right = self.width * self.bounds_right_frac
+        # Keep the cube fully inside the walls (walls sit on the bound edges).
+        max_left = max(left, right - size)
+        return left, max_left
 
     @property
     def colliders(self) -> list[tuple[float, float, float, float]]:
@@ -330,7 +376,7 @@ class PhysicsWorld:
         arbiter.process_collision = normal.y < -0.7
 
     def update_boundaries(self) -> None:
-        """Construct walls and main floor segment matching space bounds."""
+        """Construct walls and main floor segment matching the fill bounds."""
         for shape in list(self.wall_shapes):
             if shape in self.space.shapes:
                 self.space.remove(shape)
@@ -338,18 +384,24 @@ class PhysicsWorld:
 
         floor = self.effective_floor()
         r = _BOUNDARY_RADIUS
+        left_x = self.width * self.bounds_left_frac
+        right_x = self.width * self.bounds_right_frac
 
-        left_wall = pymunk.Segment(self.space.static_body, (0, -_CUBE_SIZE * 2), (0, floor), r)
+        left_wall = pymunk.Segment(
+            self.space.static_body, (left_x, -_CUBE_SIZE * 2), (left_x, floor), r
+        )
         left_wall.elasticity = _RESTITUTION
         left_wall.friction = _FRICTION
 
         right_wall = pymunk.Segment(
-            self.space.static_body, (self.width, -_CUBE_SIZE * 2), (self.width, floor), r
+            self.space.static_body, (right_x, -_CUBE_SIZE * 2), (right_x, floor), r
         )
         right_wall.elasticity = _RESTITUTION
         right_wall.friction = _FRICTION
 
-        floor_seg = pymunk.Segment(self.space.static_body, (0, floor), (self.width, floor), r)
+        floor_seg = pymunk.Segment(
+            self.space.static_body, (left_x, floor), (right_x, floor), r
+        )
         floor_seg.elasticity = _RESTITUTION
         floor_seg.friction = _FRICTION
 
@@ -385,6 +437,7 @@ class PhysicsWorld:
         return len(self.alive_cubes())
 
     def clear(self) -> None:
+        self.end_drag()
         for cube in self.cubes:
             if cube.shape in self.space.shapes:
                 self.space.remove(cube.shape)
@@ -395,10 +448,65 @@ class PhysicsWorld:
     def effective_floor(self) -> float:
         return min(self.floor_y, self.height)
 
+    @property
+    def drag_cube(self) -> Optional[Cube]:
+        return self._drag_cube
+
+    def hit_test(self, x: float, y: float) -> Optional[Cube]:
+        """Return the topmost living cube under a point, if any."""
+        info = self.space.point_query_nearest((x, y), 0.0, pymunk.ShapeFilter())
+        if info is None or info.shape is None:
+            return None
+        for cube in reversed(self.cubes):
+            if cube.shape is info.shape and cube.alive and cube.despawn_t is None:
+                return cube
+        return None
+
+    def begin_drag(self, cube: Cube, x: float, y: float) -> None:
+        if cube not in self.cubes or not cube.alive or cube.despawn_t is not None:
+            return
+        self.end_drag()
+        cube.settled = False
+        cube.stick_time = 0.0
+        mouse_body = pymunk.Body(body_type=pymunk.Body.KINEMATIC)
+        mouse_body.position = (x, y)
+        local = cube.body.world_to_local((x, y))
+        joint = pymunk.PivotJoint(mouse_body, cube.body, (0, 0), local)
+        joint.max_force = _DRAG_MAX_FORCE
+        joint.error_bias = (1.0 - 0.2) ** 60
+        self.space.add(joint)
+        self._mouse_body = mouse_body
+        self._drag_joint = joint
+        self._drag_cube = cube
+        self._drag_target = (x, y)
+
+    def update_drag(self, x: float, y: float) -> None:
+        if self._mouse_body is None:
+            return
+        self._drag_target = (x, y)
+        if self._drag_cube is not None:
+            self._drag_cube.settled = False
+
+    def end_drag(self) -> None:
+        if self._drag_joint is not None and self._drag_joint in self.space.constraints:
+            self.space.remove(self._drag_joint)
+        self._drag_joint = None
+        self._mouse_body = None
+        self._drag_cube = None
+        self._drag_target = None
+
+    def _sync_mouse_body(self, dt: float) -> None:
+        if self._mouse_body is None or self._drag_target is None:
+            return
+        tx, ty = self._drag_target
+        old = self._mouse_body.position
+        if dt > 1e-6:
+            self._mouse_body.velocity = ((tx - old.x) / dt, (ty - old.y) / dt)
+        self._mouse_body.position = (tx, ty)
+
     def spawn_falling(self, *, size: float = _CUBE_SIZE) -> Cube:
-        x = self.width * _SPAWN_X_FRACTION - size / 2
-        x += random.uniform(-_SPAWN_X_JITTER, _SPAWN_X_JITTER)
-        x = max(0.0, min(self.width - size, x))
+        x_min, x_max = self.fill_x_range(size)
+        x = random.uniform(x_min, x_max)
 
         cx = x + size / 2
         cy = -size / 2 - random.uniform(0, _SPAWN_JITTER)
@@ -411,7 +519,9 @@ class PhysicsWorld:
 
         tau = math.tau if hasattr(math, "tau") else (2 * math.pi)
         body.angle = random.uniform(0, tau)
-        body.angular_velocity = random.uniform(_SPIN_MIN, _SPIN_MAX)
+        # Bias away from zero so every falling cube visibly tumbles.
+        spin = random.uniform(_SPIN_MIN, _SPIN_MAX)
+        body.angular_velocity = spin if random.random() < 0.5 else -spin
 
         shape = pymunk.Poly.create_box(body, (size, size))
         shape.collision_type = CUBE_TYPE
@@ -425,15 +535,18 @@ class PhysicsWorld:
         return cube
 
     def spawn_settled_pile(self, count: int, *, size: float = _CUBE_SIZE) -> None:
-        """Place cubes in a rough pile on the physics floor."""
+        """Place cubes in a rough pile on the physics floor within fill bounds."""
         if count <= 0:
             return
         floor = self.effective_floor()
-        cols = max(1, int(self.width // (size + 2)))
+        x_min, x_max = self.fill_x_range(size)
+        band = max(size, (x_max - x_min) + size)
+        cols = max(1, int(band // (size + 2)))
         for i in range(count):
             col = i % cols
             row = i // cols
-            x = 4 + col * (size + 2) + random.uniform(-1, 1)
+            x = x_min + col * (size + 2) + random.uniform(-1, 1)
+            x = max(x_min, min(x_max, x))
             y = floor - size - 4 - row * (size + 1)
             y = max(0, y)
 
@@ -463,8 +576,11 @@ class PhysicsWorld:
         alive = self.alive_cubes()
         if not alive or n <= 0:
             return
-        settled = [c for c in alive if c.settled]
-        pool = settled if settled else alive
+        candidates = [c for c in alive if c is not self._drag_cube]
+        if not candidates:
+            return
+        settled = [c for c in candidates if c.settled]
+        pool = settled if settled else candidates
         n = min(n, len(pool))
         victims = random.sample(pool, n)
         for cube in victims:
@@ -546,6 +662,8 @@ class PhysicsWorld:
         remaining: list[Cube] = []
         for cube in self.cubes:
             if cube.despawn_t is not None:
+                if cube is self._drag_cube:
+                    self.end_drag()
                 cube.despawn_t -= dt
                 if cube.despawn_t > 0:
                     remaining.append(cube)
@@ -561,15 +679,19 @@ class PhysicsWorld:
 
         sub_dt = dt / _PHYSICS_SUBSTEPS
         for _ in range(_PHYSICS_SUBSTEPS):
+            self._sync_mouse_body(sub_dt)
             self.space.step(sub_dt)
             for cube in self.cubes:
-                if cube.despawn_t is not None or cube.settled:
+                if cube.despawn_t is not None or cube.settled or cube is self._drag_cube:
                     continue
                 if cube.vy > _MAX_FALL_SPEED:
                     cube.vy = _MAX_FALL_SPEED
 
         for cube in self.cubes:
             if cube.despawn_t is not None:
+                continue
+            if cube is self._drag_cube:
+                cube.stick_time = 0.0
                 continue
             if cube.settled:
                 cube.stick_time = 0.0
@@ -638,14 +760,21 @@ class _ParentResizeFilter(QObject):
 class BudgetOverlay(QWidget):
     def __init__(self, parent: QWidget) -> None:
         super().__init__(parent)
+        # Empty areas stay click-through via setMask; cubes grab input themselves.
         self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
         self.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         self.setAutoFillBackground(False)
+        self.setMouseTracking(True)
+        self.setCursor(Qt.CursorShape.OpenHandCursor)
 
         self.world = PhysicsWorld()
         self._display_seconds = 0
+        self._show_timer = True
         self._debug_status_accum = 0.0
+        self._dragging = False
+        # Flashcard content rects — cubes paint/click behind these.
+        self._content_occluders: list[tuple[float, float, float, float]] = []
         self._parent_filter = _ParentResizeFilter(self)
         parent.installEventFilter(self._parent_filter)
 
@@ -657,8 +786,13 @@ class BudgetOverlay(QWidget):
         self.show()
         self.raise_()
         self._timer.start()
+        self._request_repaint()
 
     def shutdown(self) -> None:
+        if self._dragging:
+            self.releaseMouse()
+            self._dragging = False
+        self.world.end_drag()
         self._timer.stop()
         parent = self.parentWidget()
         if parent is not None:
@@ -668,7 +802,11 @@ class BudgetOverlay(QWidget):
 
     def set_display_seconds(self, seconds: int) -> None:
         self._display_seconds = max(0, int(seconds))
-        self.update()
+        self._request_repaint()
+
+    def set_show_timer(self, show: bool) -> None:
+        self._show_timer = bool(show)
+        self._request_repaint()
 
     def _sync_geometry(self) -> None:
         parent = self.parentWidget()
@@ -681,6 +819,120 @@ class BudgetOverlay(QWidget):
             self.world.floor_y = self.world.height
         self.world.update_boundaries()
         self.raise_()
+        self._request_repaint()
+
+    def _event_pos(self, event: QMouseEvent) -> QPoint:
+        if hasattr(event, "position"):
+            return event.position().toPoint()
+        return event.pos()
+
+    def set_content_occluders(
+        self, rects: Sequence[tuple[float, float, float, float]]
+    ) -> None:
+        self._content_occluders = [
+            (float(x), float(y), float(w), float(h))
+            for x, y, w, h in rects
+            if w > 1 and h > 1
+        ]
+        self._request_repaint()
+
+    def clear_content_occluders(self) -> None:
+        self._content_occluders = []
+        self._request_repaint()
+
+    def _occluder_region(self) -> QRegion:
+        region = QRegion()
+        for x, y, w, h in self._content_occluders:
+            region = region.united(QRegion(int(x), int(y), int(w), int(h)))
+        return region
+
+    def _request_repaint(self) -> None:
+        """Repaint the full overlay; reapply the mouse mask after painting.
+
+        setMask() clips both hits and paints. If the mask moves with cubes,
+        old pixels outside the new mask are never erased — motion trails.
+        Clearing the mask before update lets paintEvent wipe the full widget.
+        """
+        if not self._dragging:
+            self.clearMask()
+            self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
+        self.update()
+
+    def _apply_input_mask(self) -> None:
+        """Restrict mouse hits to cubes after paint (does not clip this frame)."""
+        if self._dragging:
+            self.clearMask()
+            self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, False)
+            return
+
+        region = QRegion()
+        pad = _DRAG_MASK_PAD
+        for cube in self.world.alive_cubes():
+            x, y, w, h = cube.rect()
+            region = region.united(
+                QRegion(
+                    int(x) - pad,
+                    int(y) - pad,
+                    int(w) + pad * 2,
+                    int(h) + pad * 2,
+                )
+            )
+
+        # Card content stays clickable — cubes are visually behind it.
+        for x, y, w, h in self._content_occluders:
+            region = region.subtracted(QRegion(int(x), int(y), int(w), int(h)))
+
+        if region.isEmpty():
+            self.clearMask()
+            self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
+            return
+
+        if self._show_timer:
+            region = region.united(QRegion(_HUD_MASK_RECT))
+        self.setMask(region)
+        self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, False)
+
+    def mousePressEvent(self, event: QMouseEvent) -> None:  # noqa: N802
+        if event.button() != Qt.MouseButton.LeftButton:
+            super().mousePressEvent(event)
+            return
+        pos = self._event_pos(event)
+        px, py = float(pos.x()), float(pos.y())
+        if point_in_rects(px, py, self._content_occluders):
+            event.ignore()
+            return
+        cube = self.world.hit_test(px, py)
+        if cube is None:
+            event.ignore()
+            return
+        self.world.begin_drag(cube, px, py)
+        self._dragging = True
+        self.setCursor(Qt.CursorShape.ClosedHandCursor)
+        self.grabMouse()
+        self._request_repaint()
+        event.accept()
+
+    def mouseMoveEvent(self, event: QMouseEvent) -> None:  # noqa: N802
+        if not self._dragging:
+            super().mouseMoveEvent(event)
+            return
+        pos = self._event_pos(event)
+        self.world.update_drag(float(pos.x()), float(pos.y()))
+        self._request_repaint()
+        event.accept()
+
+    def mouseReleaseEvent(self, event: QMouseEvent) -> None:  # noqa: N802
+        if event.button() != Qt.MouseButton.LeftButton or not self._dragging:
+            super().mouseReleaseEvent(event)
+            return
+        pos = self._event_pos(event)
+        self.world.update_drag(float(pos.x()), float(pos.y()))
+        self.world.end_drag()
+        self._dragging = False
+        self.releaseMouse()
+        self.setCursor(Qt.CursorShape.OpenHandCursor)
+        self._request_repaint()
+        event.accept()
 
     def set_floor_y(self, floor_y: float) -> None:
         new_floor = max(1.0, min(float(floor_y), self.world.height))
@@ -693,7 +945,7 @@ class BudgetOverlay(QWidget):
             )
             if _DEBUG_DRAW_COLLIDERS:
                 _log(f"floor set {old_floor:.1f} -> {new_floor:.1f} (h={self.world.height:.1f})")
-        self.update()
+        self._request_repaint()
 
     def reset_floor_to_bottom(self) -> None:
         old_floor = self.world.floor_y
@@ -703,26 +955,30 @@ class BudgetOverlay(QWidget):
             self.world.wake_all(reason="reset_floor_to_bottom")
             if _DEBUG_DRAW_COLLIDERS:
                 _log(f"floor reset to height={self.world.height:.1f}")
-        self.update()
+        self._request_repaint()
 
     def wake_all_cubes(self, *, reason: str = "") -> None:
         self.world.wake_all(reason=reason)
-        self.update()
+        self._request_repaint()
 
     def set_colliders(self, rects: Sequence[tuple[float, float, float, float]]) -> None:
         self.world.colliders = [
             (float(x), float(y), float(w), float(h)) for x, y, w, h in rects if w > 1 and h > 1
         ]
-        self.update()
+        self._request_repaint()
 
     def clear_colliders(self) -> None:
         self.world.colliders = []
-        self.update()
+        self._request_repaint()
 
     def hydrate_settled(self, count: int) -> None:
+        if self._dragging:
+            self.releaseMouse()
+            self._dragging = False
+            self.setCursor(Qt.CursorShape.OpenHandCursor)
         self.world.clear()
         self.world.spawn_settled_pile(count)
-        self.update()
+        self._request_repaint()
 
     def sync_to_count(self, target: int, *, falling: bool) -> None:
         target = max(0, int(target))
@@ -741,7 +997,7 @@ class BudgetOverlay(QWidget):
                         )
                 else:
                     self.world.spawn_settled_pile(1)
-        self.update()
+        self._request_repaint()
 
     def _on_tick(self) -> None:
         if self.world.cubes:
@@ -753,7 +1009,7 @@ class BudgetOverlay(QWidget):
                 self._log_debug_status()
         # Keep redrawing while debugging so platforms stay visible with 0 cubes.
         if self.world.cubes or _DEBUG_DRAW_COLLIDERS:
-            self.update()
+            self._request_repaint()
 
     def _log_debug_status(self) -> None:
         alive = self.world.alive_cubes()
@@ -794,10 +1050,15 @@ class BudgetOverlay(QWidget):
                 f"c{i} {w:.0f}x{h:.0f} @({x:.0f},{y:.0f})",
             )
 
-        # Spawn column hint.
-        spawn_x = self.world.width * _SPAWN_X_FRACTION
+        # Spawn / fill band hint.
+        left_x = self.world.width * self.world.bounds_left_frac
+        right_x = self.world.width * self.world.bounds_right_frac
         painter.setPen(QPen(QColor(80, 200, 255, 160), 1, Qt.PenStyle.DotLine))
-        painter.drawLine(int(spawn_x), 0, int(spawn_x), int(floor))
+        painter.drawLine(int(left_x), 0, int(left_x), int(floor))
+        painter.drawLine(int(right_x), 0, int(right_x), int(floor))
+        painter.setBrush(QColor(80, 200, 255, 25))
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.drawRect(QRectF(left_x, 0, max(0.0, right_x - left_x), floor))
 
         # Per-cube debug outline: magenta = settled (frozen), cyan = active.
         for cube in self.world.cubes:
@@ -816,44 +1077,71 @@ class BudgetOverlay(QWidget):
     def paintEvent(self, event: QPaintEvent) -> None:  # noqa: N802
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+        # Translucent widgets don't auto-erase; wipe the dirty rect or frames smear.
+        painter.setCompositionMode(QPainter.CompositionMode.CompositionMode_Source)
+        painter.fillRect(event.rect(), QColor(0, 0, 0, 0))
+        painter.setCompositionMode(QPainter.CompositionMode.CompositionMode_SourceOver)
 
         if _DEBUG_DRAW_COLLIDERS:
             self._paint_debug_colliders(painter)
 
-        label = f"Watch: {format_seconds(self._display_seconds)}"
-        font = QFont(painter.font())
-        font.setPointSize(11)
-        font.setBold(True)
-        painter.setFont(font)
-        metrics = painter.fontMetrics()
-        text_w = metrics.horizontalAdvance(label)
-        text_h = metrics.height()
-        pad_x, pad_y = 8, 5
-        hud = QRectF(10, 10, text_w + pad_x * 2, text_h + pad_y * 2)
-        painter.setBrush(QColor(20, 20, 20, 140))
-        painter.setPen(Qt.PenStyle.NoPen)
-        painter.drawRoundedRect(hud, 6, 6)
-        painter.setPen(QColor(245, 245, 245, 235))
-        painter.drawText(
-            QRectF(hud.x() + pad_x, hud.y() + pad_y, text_w, text_h),
-            int(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter),
-            label,
-        )
+        if self._show_timer:
+            label = f"Watch: {format_seconds(self._display_seconds)}"
+            font = QFont(painter.font())
+            font.setPointSize(11)
+            font.setBold(True)
+            painter.setFont(font)
+            metrics = painter.fontMetrics()
+            text_w = metrics.horizontalAdvance(label)
+            text_h = metrics.height()
+            pad_x, pad_y = 8, 5
+            hud = QRectF(10, 10, text_w + pad_x * 2, text_h + pad_y * 2)
+            painter.setBrush(QColor(20, 20, 20, 140))
+            painter.setPen(Qt.PenStyle.NoPen)
+            painter.drawRoundedRect(hud, 6, 6)
+            painter.setPen(QColor(245, 245, 245, 235))
+            painter.drawText(
+                QRectF(hud.x() + pad_x, hud.y() + pad_y, text_w, text_h),
+                int(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter),
+                label,
+            )
 
-        for cube in self.world.cubes:
-            if not cube.alive:
-                continue
+        dragged = self.world.drag_cube
+        behind = [c for c in self.world.cubes if c.alive and c is not dragged]
+        occluder = self._occluder_region()
+        if behind:
+            painter.save()
+            if not occluder.isEmpty():
+                painter.setClipRegion(QRegion(self.rect()).subtracted(occluder))
+            self._paint_cubes(painter, behind)
+            painter.restore()
+        # Keep the actively dragged cube in front so it stays visible under the card.
+        if dragged is not None and dragged.alive:
+            self._paint_cubes(painter, [dragged])
+        painter.end()
+        # Apply after painting so setMask cannot clip away the transparent wipe.
+        self._apply_input_mask()
+
+    def _paint_cubes(self, painter: QPainter, cubes: Sequence[Cube]) -> None:
+        for cube in cubes:
             alpha = 220
             if cube.despawn_t is not None:
                 alpha = max(0, int(220 * (cube.despawn_t / _DESPAWN_FADE_SEC)))
-            color = QColor(70, 140, 220, alpha)
-            border = QColor(30, 80, 160, alpha)
+            dragging = cube is self.world.drag_cube
+            if dragging:
+                color = QColor(110, 180, 255, alpha)
+                border = QColor(50, 120, 210, alpha)
+            else:
+                color = QColor(70, 140, 220, alpha)
+                border = QColor(30, 80, 160, alpha)
             painter.setBrush(color)
             painter.setPen(border)
             radius = max(2.0, cube.size * 0.18)
             scale = 1.0
             if cube.despawn_t is not None:
                 scale = max(0.15, cube.despawn_t / _DESPAWN_FADE_SEC)
+            elif dragging:
+                scale = 1.08
             cx = cube.x + cube.size / 2
             cy = cube.y + cube.size / 2
             s = cube.size * scale
@@ -863,7 +1151,6 @@ class BudgetOverlay(QWidget):
             rect = QRectF(-s / 2, -s / 2, s, s)
             painter.drawRoundedRect(rect, radius * scale, radius * scale)
             painter.restore()
-        painter.end()
 
 
 class BudgetOverlayController:
@@ -877,10 +1164,85 @@ class BudgetOverlayController:
         self._collider_poll.timeout.connect(self.refresh_card_colliders)
         self._last_seconds: Optional[int] = None
         self._chunk = 15
+        # Pixels from window bottom to the review bottom-bar top; reused on menu screens.
+        self._last_floor_inset: Optional[float] = None
 
     @property
     def overlay(self) -> Optional[BudgetOverlay]:
         return self._overlay
+
+    def cubes_enabled(self) -> bool:
+        from .config import get_config
+
+        return bool(get_config(self._addon_module).get("show_budget_cubes", True))
+
+    def timer_enabled(self) -> bool:
+        from .config import get_config
+
+        return bool(get_config(self._addon_module).get("show_overlay_timer", True))
+
+    def overlay_enabled(self) -> bool:
+        return self.cubes_enabled() or self.timer_enabled()
+
+    def _apply_cube_bounds(self) -> None:
+        from .config import get_config
+
+        if self._overlay is None:
+            return
+        config = get_config(self._addon_module)
+        left = float(config.get("cube_bounds_left_pct", 0)) / 100.0
+        right = float(config.get("cube_bounds_right_pct", 100)) / 100.0
+        self._overlay.world.set_horizontal_bounds(left, right)
+
+    def apply_settings(self) -> None:
+        """Show or hide overlay pieces after settings change."""
+        if not self.overlay_enabled():
+            self._hide_overlay()
+            _log("budget overlay hidden (cubes and timer off)")
+            return
+        if self._overlay is None:
+            self.start()
+        if self._overlay is None:
+            return
+        self._apply_cube_bounds()
+        self._overlay.set_show_timer(self.timer_enabled())
+        self._overlay.show()
+        self.ensure_raised()
+        if self.cubes_enabled():
+            if not self._collider_poll.isActive():
+                self._collider_poll.start()
+            self.refresh_floor()
+            # Re-stack within the (possibly updated) horizontal bounds.
+            n = self._overlay.world.cube_count()
+            if n > 0:
+                self._overlay.hydrate_settled(n)
+            _log("budget cubes enabled")
+        else:
+            self._clear_cubes_only()
+            _log("budget cubes disabled")
+        if self.timer_enabled():
+            _log("overlay timer enabled")
+        else:
+            _log("overlay timer disabled")
+
+    def _clear_cubes_only(self) -> None:
+        self._collider_poll.stop()
+        if self._overlay is None:
+            return
+        self._overlay.world.clear()
+        self._overlay.clear_colliders()
+        self._overlay.clear_content_occluders()
+        self._overlay._request_repaint()
+
+    def _hide_overlay(self) -> None:
+        self._collider_poll.stop()
+        if self._overlay is None:
+            return
+        self._overlay.world.clear()
+        self._overlay.clear_colliders()
+        self._overlay.clear_content_occluders()
+        self._overlay.hide()
+        self._overlay._request_repaint()
 
     def start(self) -> None:
         central = mw.centralWidget()
@@ -890,6 +1252,14 @@ class BudgetOverlayController:
         if self._overlay is not None:
             return
         self._overlay = BudgetOverlay(central)
+        self._overlay.set_show_timer(self.timer_enabled())
+        self._apply_cube_bounds()
+        if not self.overlay_enabled():
+            self._overlay.hide()
+        elif self.cubes_enabled():
+            if not self._collider_poll.isActive():
+                self._collider_poll.start()
+            self.refresh_floor()
         _log("budget overlay started")
 
     def shutdown(self) -> None:
@@ -901,32 +1271,53 @@ class BudgetOverlayController:
         _log("budget overlay shut down")
 
     def ensure_raised(self) -> None:
-        if self._overlay is not None:
-            self._overlay._sync_geometry()
-            self._overlay.raise_()
+        if self._overlay is None or not self.overlay_enabled():
+            return
+        self._overlay._sync_geometry()
+        self._overlay.raise_()
 
     def set_review_active(self, active: bool) -> None:
+        if not self.overlay_enabled():
+            self._hide_overlay()
+            return
+        if not self.cubes_enabled():
+            self._clear_cubes_only()
+            if self._overlay is not None:
+                self._overlay.set_show_timer(self.timer_enabled())
+                self._overlay.show()
+            self.ensure_raised()
+            return
+        # Keep the floor poll running on menu screens so cubes stay above Anki chrome.
+        if not self._collider_poll.isActive():
+            self._collider_poll.start()
         if active:
-            if not self._collider_poll.isActive():
-                self._collider_poll.start()
             QTimer.singleShot(0, self.refresh_card_colliders)
             QTimer.singleShot(50, self.refresh_card_colliders)
         else:
-            self._collider_poll.stop()
             if self._overlay is not None:
                 self._overlay.clear_colliders()
-                self._overlay.reset_floor_to_bottom()
+                self._overlay.clear_content_occluders()
+            self.refresh_floor()
+            if self._overlay is not None:
                 self._overlay.wake_all_cubes(reason="leave_review")
         self.ensure_raised()
 
     def hydrate_from_budget(self, seconds: int, chunk_seconds: int, max_budget_seconds: int) -> None:
         self._chunk = max(1, int(chunk_seconds))
         self._last_seconds = int(seconds)
+        if not self.overlay_enabled():
+            self._hide_overlay()
+            return
         if self._overlay is None:
             self.start()
         if self._overlay is None:
             return
+        self._overlay.set_show_timer(self.timer_enabled())
+        self._overlay.show()
         self._overlay.set_display_seconds(seconds)
+        if not self.cubes_enabled():
+            self._clear_cubes_only()
+            return
         # Ensure floor is ready before stacking hydrate piles.
         self.refresh_floor()
         cap = max_cube_count(max_budget_seconds, self._chunk)
@@ -942,62 +1333,89 @@ class BudgetOverlayController:
         falling: bool,
     ) -> None:
         self._chunk = max(1, int(chunk_seconds))
-        cap = max_cube_count(max_budget_seconds, self._chunk)
-        target = min(cube_count_for_seconds(seconds, self._chunk), cap)
+        self._last_seconds = int(seconds)
+        if not self.overlay_enabled():
+            self._hide_overlay()
+            return
         if self._overlay is None:
             self.start()
         if self._overlay is None:
             return
+        self._overlay.set_show_timer(self.timer_enabled())
+        self._overlay.show()
         self._overlay.set_display_seconds(seconds)
-        if falling:
-            self.refresh_floor()
+        if not self.cubes_enabled():
+            self._clear_cubes_only()
+            return
+        cap = max_cube_count(max_budget_seconds, self._chunk)
+        target = min(cube_count_for_seconds(seconds, self._chunk), cap)
+        # Keep floor pinned to the review bottom-bar height on every screen.
+        self.refresh_floor()
         self._overlay.sync_to_count(target, falling=falling)
-        self._last_seconds = int(seconds)
 
-    def refresh_floor(self) -> None:
+    def _measure_bottom_bar_floor_y(self) -> Optional[float]:
+        """Top edge of the reviewer bottom bar, in overlay coordinates."""
         if self._overlay is None:
-            return
-        if mw.state != "review":
-            self._overlay.reset_floor_to_bottom()
-            return
+            return None
         reviewer = getattr(mw, "reviewer", None)
         bottom = getattr(reviewer, "bottom", None) if reviewer is not None else None
         bottom_web = getattr(bottom, "web", None) if bottom is not None else None
         if bottom_web is None:
-            self._overlay.reset_floor_to_bottom()
-            return
+            return None
         try:
+            if int(bottom_web.height()) < 8:
+                return None
             top_left = self._overlay.mapFromGlobal(bottom_web.mapToGlobal(QPoint(0, 0)))
             floor_y = float(top_left.y())
-            height = self._overlay.world.height
-            if floor_y < 40 or floor_y > height or floor_y < height * _MIN_FLOOR_HEIGHT_FRACTION:
-                if _DEBUG_DRAW_COLLIDERS:
-                    _log(f"floor rejected y={floor_y:.1f} h={height:.1f} (need >= {height * _MIN_FLOOR_HEIGHT_FRACTION:.1f})")
-                self._overlay.reset_floor_to_bottom()
-                return
+        except Exception:
+            return None
+        height = self._overlay.world.height
+        if floor_y < 40 or floor_y > height or floor_y < height * _MIN_FLOOR_HEIGHT_FRACTION:
+            if _DEBUG_DRAW_COLLIDERS:
+                _log(
+                    f"floor rejected y={floor_y:.1f} h={height:.1f} "
+                    f"(need >= {height * _MIN_FLOOR_HEIGHT_FRACTION:.1f})"
+                )
+            return None
+        return floor_y
+
+    def refresh_floor(self) -> None:
+        """Pin the physics floor to the flashcard bottom bar on every screen."""
+        if self._overlay is None or not self.cubes_enabled():
+            return
+        height = self._overlay.world.height
+        floor_y = self._measure_bottom_bar_floor_y()
+        if floor_y is not None:
+            self._last_floor_inset = max(20.0, height - floor_y)
             self._overlay.set_floor_y(floor_y)
-        except Exception as exc:
-            _log(f"floor refresh failed: {exc}")
-            self._overlay.reset_floor_to_bottom()
+            return
+        inset = self._last_floor_inset
+        if inset is None or inset < 20.0:
+            # Typical Anki review bottom-bar height when we have never measured.
+            inset = 64.0
+        self._overlay.set_floor_y(height - inset)
 
     def refresh_card_colliders(self) -> None:
-        if self._overlay is None:
+        if self._overlay is None or not self.cubes_enabled():
             return
         self.refresh_floor()
         if mw.state != "review":
             self._overlay.clear_colliders()
+            self._overlay.clear_content_occluders()
             return
         reviewer = getattr(mw, "reviewer", None)
         web = getattr(reviewer, "web", None) if reviewer is not None else None
         if web is None:
             self._overlay.clear_colliders()
+            self._overlay.clear_content_occluders()
             return
 
         def on_result(result: object) -> None:
-            if self._overlay is None:
+            if self._overlay is None or not self.cubes_enabled():
                 return
             if not isinstance(result, dict):
                 self._overlay.clear_colliders()
+                self._overlay.clear_content_occluders()
                 return
             try:
                 x = float(result.get("x", 0))
@@ -1008,17 +1426,25 @@ class BudgetOverlayController:
                 vh = float(result.get("vh", 0) or 0)
             except (TypeError, ValueError, AttributeError):
                 self._overlay.clear_colliders()
+                self._overlay.clear_content_occluders()
                 return
             try:
                 origin = self._overlay.mapFromGlobal(web.mapToGlobal(QPoint(0, 0)))
             except Exception:
                 self._overlay.clear_colliders()
+                self._overlay.clear_content_occluders()
                 return
+            content = (origin.x() + x, origin.y() + y, w, h)
+            # Hide cubes under the real card text box (before physics clamping).
+            if w > 1 and h > 1:
+                self._overlay.set_content_occluders([content])
+            else:
+                self._overlay.clear_content_occluders()
             platform = normalize_card_platform(
-                origin.x() + x,
-                origin.y() + y,
-                w,
-                h,
+                content[0],
+                content[1],
+                content[2],
+                content[3],
                 vw=vw if vw > 0 else float(web.width()),
                 vh=vh if vh > 0 else float(web.height()),
             )
@@ -1034,3 +1460,4 @@ class BudgetOverlayController:
         except Exception as exc:
             _log(f"card collider query failed: {exc}")
             self._overlay.clear_colliders()
+            self._overlay.clear_content_occluders()

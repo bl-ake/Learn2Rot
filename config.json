@@ -1,5 +1,5 @@
 {
-    "config_version": 3,
+    "config_version": 4,
     "seconds_per_card": 15,
     "starting_budget_seconds": 0,
     "max_budget_seconds": 600,
@@ -13,5 +13,9 @@
     "debug_logging": true,
     "media_mode": "system",
     "auto_resume_on_budget": false,
+    "show_budget_cubes": true,
+    "cube_bounds_left_pct": 0,
+    "cube_bounds_right_pct": 100,
+    "show_overlay_timer": true,
     "system_media_poll_ms": 500
 }
