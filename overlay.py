@@ -191,17 +191,6 @@ def normalize_card_platform(
     return (x, y, w, h)
 
 
-def point_in_rects(
-    px: float,
-    py: float,
-    rects: Sequence[tuple[float, float, float, float]],
-) -> bool:
-    for x, y, w, h in rects:
-        if w > 0 and h > 0 and x <= px <= x + w and y <= py <= y + h:
-            return True
-    return False
-
-
 class Cube:
     """Wrapper mapping dynamic attributes to clean property gates on PyMunk Body."""
 
@@ -773,8 +762,6 @@ class BudgetOverlay(QWidget):
         self._show_timer = True
         self._debug_status_accum = 0.0
         self._dragging = False
-        # Flashcard content rects — cubes paint/click behind these.
-        self._content_occluders: list[tuple[float, float, float, float]] = []
         self._parent_filter = _ParentResizeFilter(self)
         parent.installEventFilter(self._parent_filter)
 
@@ -826,26 +813,6 @@ class BudgetOverlay(QWidget):
             return event.position().toPoint()
         return event.pos()
 
-    def set_content_occluders(
-        self, rects: Sequence[tuple[float, float, float, float]]
-    ) -> None:
-        self._content_occluders = [
-            (float(x), float(y), float(w), float(h))
-            for x, y, w, h in rects
-            if w > 1 and h > 1
-        ]
-        self._request_repaint()
-
-    def clear_content_occluders(self) -> None:
-        self._content_occluders = []
-        self._request_repaint()
-
-    def _occluder_region(self) -> QRegion:
-        region = QRegion()
-        for x, y, w, h in self._content_occluders:
-            region = region.united(QRegion(int(x), int(y), int(w), int(h)))
-        return region
-
     def _request_repaint(self) -> None:
         """Repaint the full overlay; reapply the mouse mask after painting.
 
@@ -878,10 +845,6 @@ class BudgetOverlay(QWidget):
                 )
             )
 
-        # Card content stays clickable — cubes are visually behind it.
-        for x, y, w, h in self._content_occluders:
-            region = region.subtracted(QRegion(int(x), int(y), int(w), int(h)))
-
         if region.isEmpty():
             self.clearMask()
             self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
@@ -898,9 +861,6 @@ class BudgetOverlay(QWidget):
             return
         pos = self._event_pos(event)
         px, py = float(pos.x()), float(pos.y())
-        if point_in_rects(px, py, self._content_occluders):
-            event.ignore()
-            return
         cube = self.world.hit_test(px, py)
         if cube is None:
             event.ignore()
@@ -1107,15 +1067,9 @@ class BudgetOverlay(QWidget):
             )
 
         dragged = self.world.drag_cube
-        behind = [c for c in self.world.cubes if c.alive and c is not dragged]
-        occluder = self._occluder_region()
-        if behind:
-            painter.save()
-            if not occluder.isEmpty():
-                painter.setClipRegion(QRegion(self.rect()).subtracted(occluder))
-            self._paint_cubes(painter, behind)
-            painter.restore()
-        # Keep the actively dragged cube in front so it stays visible under the card.
+        rest = [c for c in self.world.cubes if c.alive and c is not dragged]
+        if rest:
+            self._paint_cubes(painter, rest)
         if dragged is not None and dragged.alive:
             self._paint_cubes(painter, [dragged])
         painter.end()
@@ -1231,7 +1185,6 @@ class BudgetOverlayController:
             return
         self._overlay.world.clear()
         self._overlay.clear_colliders()
-        self._overlay.clear_content_occluders()
         self._overlay._request_repaint()
 
     def _hide_overlay(self) -> None:
@@ -1240,7 +1193,6 @@ class BudgetOverlayController:
             return
         self._overlay.world.clear()
         self._overlay.clear_colliders()
-        self._overlay.clear_content_occluders()
         self._overlay.hide()
         self._overlay._request_repaint()
 
@@ -1296,7 +1248,6 @@ class BudgetOverlayController:
         else:
             if self._overlay is not None:
                 self._overlay.clear_colliders()
-                self._overlay.clear_content_occluders()
             self.refresh_floor()
             if self._overlay is not None:
                 self._overlay.wake_all_cubes(reason="leave_review")
@@ -1401,13 +1352,11 @@ class BudgetOverlayController:
         self.refresh_floor()
         if mw.state != "review":
             self._overlay.clear_colliders()
-            self._overlay.clear_content_occluders()
             return
         reviewer = getattr(mw, "reviewer", None)
         web = getattr(reviewer, "web", None) if reviewer is not None else None
         if web is None:
             self._overlay.clear_colliders()
-            self._overlay.clear_content_occluders()
             return
 
         def on_result(result: object) -> None:
@@ -1415,7 +1364,6 @@ class BudgetOverlayController:
                 return
             if not isinstance(result, dict):
                 self._overlay.clear_colliders()
-                self._overlay.clear_content_occluders()
                 return
             try:
                 x = float(result.get("x", 0))
@@ -1426,25 +1374,17 @@ class BudgetOverlayController:
                 vh = float(result.get("vh", 0) or 0)
             except (TypeError, ValueError, AttributeError):
                 self._overlay.clear_colliders()
-                self._overlay.clear_content_occluders()
                 return
             try:
                 origin = self._overlay.mapFromGlobal(web.mapToGlobal(QPoint(0, 0)))
             except Exception:
                 self._overlay.clear_colliders()
-                self._overlay.clear_content_occluders()
                 return
-            content = (origin.x() + x, origin.y() + y, w, h)
-            # Hide cubes under the real card text box (before physics clamping).
-            if w > 1 and h > 1:
-                self._overlay.set_content_occluders([content])
-            else:
-                self._overlay.clear_content_occluders()
             platform = normalize_card_platform(
-                content[0],
-                content[1],
-                content[2],
-                content[3],
+                origin.x() + x,
+                origin.y() + y,
+                w,
+                h,
                 vw=vw if vw > 0 else float(web.width()),
                 vh=vh if vh > 0 else float(web.height()),
             )
@@ -1460,4 +1400,3 @@ class BudgetOverlayController:
         except Exception as exc:
             _log(f"card collider query failed: {exc}")
             self._overlay.clear_colliders()
-            self._overlay.clear_content_occluders()

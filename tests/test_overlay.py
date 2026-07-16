@@ -220,14 +220,3 @@ def test_despawn_skips_dragged_cube() -> None:
     assert dragged.despawn_t is None
     assert world.cube_count() == 1
     assert world.drag_cube is dragged
-
-
-def test_point_in_rects() -> None:
-    overlay = load_addon_module("overlay", "overlay.py")
-    rects = [(10.0, 20.0, 30.0, 40.0)]
-    assert overlay.point_in_rects(15, 25, rects) is True
-    assert overlay.point_in_rects(10, 20, rects) is True
-    assert overlay.point_in_rects(40, 60, rects) is True
-    assert overlay.point_in_rects(9, 25, rects) is False
-    assert overlay.point_in_rects(15, 61, rects) is False
-    assert overlay.point_in_rects(15, 25, []) is False
