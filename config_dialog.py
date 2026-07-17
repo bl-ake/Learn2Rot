@@ -5,6 +5,8 @@
 
 from __future__ import annotations
 
+import platform
+
 from aqt import mw
 from aqt.qt import (
     QCheckBox,
@@ -177,12 +179,12 @@ class ConfigDialog(QDialog):
         form.addRow("Dock playback buttons:", self.dock_show_playback_buttons)
 
         self.show_menubar_watch_time = QCheckBox(
-            "Show Anki Media Timer icon in the macOS menu bar (default on)"
+            _menubar_watch_time_checkbox_label()
         )
         self.show_menubar_watch_time.setChecked(
             bool(config.get("show_menubar_watch_time", True))
         )
-        form.addRow("Menu bar icon:", self.show_menubar_watch_time)
+        form.addRow(_menubar_watch_time_form_label(), self.show_menubar_watch_time)
 
         self.quit_with_anki = QCheckBox(
             "Quit Anki Media Timer when Anki quits "
@@ -201,15 +203,7 @@ class ConfigDialog(QDialog):
                 "randomly between them. Uncheck Budget cubes to hide them completely."
             )
         )
-        layout.addWidget(
-            QLabel(
-                "By default, Anki Media Timer meters and pauses macOS Now Playing media "
-                "(Spotify, Music, browser tabs that report Now Playing, etc.) "
-                "in the background. Play/Pause: Tools → AnkiTube or the P key. "
-                "Lockout is best-effort for apps that publish to Now Playing. "
-                "Uncheck “Quit with Anki” to keep Anki Media Timer running after Anki closes."
-            )
-        )
+        layout.addWidget(QLabel(_system_media_help_text()))
         layout.addWidget(
             QLabel(
                 "Current watch budget is saved automatically. "
@@ -292,3 +286,38 @@ class ConfigDialog(QDialog):
         self._budget.save()
         showInfo("AnkiTube settings saved.")
         self.accept()
+
+
+def _is_windows() -> bool:
+    return platform.system().lower() == "windows"
+
+
+def _menubar_watch_time_checkbox_label() -> str:
+    if _is_windows():
+        return "Show Anki Media Timer icon in the system tray (default on)"
+    return "Show Anki Media Timer icon in the menu bar (default on)"
+
+
+def _menubar_watch_time_form_label() -> str:
+    if _is_windows():
+        return "System tray icon:"
+    return "Menu bar icon:"
+
+
+def _system_media_help_text() -> str:
+    if _is_windows():
+        return (
+            "By default, Anki Media Timer meters and pauses Windows system media "
+            "(Spotify, Music, browser tabs that report SMTC, etc.) "
+            "in the background. Play/Pause: Tools → AnkiTube or the P key. "
+            "Lockout is best-effort for apps that publish to System Media Transport "
+            "Controls. Uncheck “Quit with Anki” to keep Anki Media Timer running "
+            "after Anki closes."
+        )
+    return (
+        "By default, Anki Media Timer meters and pauses macOS Now Playing media "
+        "(Spotify, Music, browser tabs that report Now Playing, etc.) "
+        "in the background. Play/Pause: Tools → AnkiTube or the P key. "
+        "Lockout is best-effort for apps that publish to Now Playing. "
+        "Uncheck “Quit with Anki” to keep Anki Media Timer running after Anki closes."
+    )

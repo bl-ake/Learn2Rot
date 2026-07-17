@@ -1,7 +1,7 @@
 # Copyright (C) 2026 bl-ake
 # SPDX-License-Identifier: AGPL-3.0-or-later
 
-"""Shared JSON state protocol for the macOS watch daemon.
+"""Shared JSON state protocol for the watch daemon.
 
 Anki writes credits/subtracts/prefs/anki_alive; the daemon owns budget_seconds
 while running and applies credits atomically under a file lock.
@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import json
 import os
+import sys
 import tempfile
 from pathlib import Path
 from typing import Any, Callable, Optional
@@ -19,6 +20,11 @@ try:
     import fcntl
 except ImportError:  # pragma: no cover - non-Unix
     fcntl = None  # type: ignore[assignment]
+
+try:
+    import msvcrt
+except ImportError:  # pragma: no cover - non-Windows
+    msvcrt = None  # type: ignore[assignment]
 
 STATE_FILENAME = "ankitube_watch_state.json"
 EXIT_SENTINEL = "__EXIT__"
@@ -188,6 +194,32 @@ def drain_one_second(budget_seconds: int) -> tuple[int, bool]:
     return remaining, remaining > 0
 
 
+def _lock_acquire(lock_handle: Any) -> None:
+    if fcntl is not None:
+        fcntl.flock(lock_handle.fileno(), fcntl.LOCK_EX)
+        return
+    if msvcrt is not None:
+        # Ensure the lock file has at least one byte to lock.
+        lock_handle.seek(0)
+        if lock_handle.read(1) == "":
+            lock_handle.write("0")
+            lock_handle.flush()
+        lock_handle.seek(0)
+        msvcrt.locking(lock_handle.fileno(), msvcrt.LK_LOCK, 1)
+
+
+def _lock_release(lock_handle: Any) -> None:
+    if fcntl is not None:
+        fcntl.flock(lock_handle.fileno(), fcntl.LOCK_UN)
+        return
+    if msvcrt is not None:
+        try:
+            lock_handle.seek(0)
+            msvcrt.locking(lock_handle.fileno(), msvcrt.LK_UNLCK, 1)
+        except OSError:
+            pass
+
+
 def update_state(
     path: Path,
     mutator: Callable[[dict[str, Any]], None],
@@ -202,8 +234,7 @@ def update_state(
     lock_handle: Optional[Any] = None
     try:
         lock_handle = open(lock_path, "a+", encoding="utf-8")
-        if fcntl is not None:
-            fcntl.flock(lock_handle.fileno(), fcntl.LOCK_EX)
+        _lock_acquire(lock_handle)
         state = read_state(path)
         mutator(state)
         state = normalize_state(state)
@@ -212,8 +243,7 @@ def update_state(
     finally:
         if lock_handle is not None:
             try:
-                if fcntl is not None:
-                    fcntl.flock(lock_handle.fileno(), fcntl.LOCK_UN)
+                _lock_release(lock_handle)
             except OSError:
                 pass
             lock_handle.close()
@@ -232,9 +262,36 @@ def prefs_from_config(config: dict[str, Any], *, enforce: bool) -> dict[str, Any
     )
 
 
+def _pid_is_alive_windows(pid: int) -> bool:
+    import ctypes
+
+    PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
+    STILL_ACTIVE = 259
+    handle = ctypes.windll.kernel32.OpenProcess(  # type: ignore[attr-defined]
+        PROCESS_QUERY_LIMITED_INFORMATION, False, int(pid)
+    )
+    if not handle:
+        return False
+    try:
+        exit_code = ctypes.c_ulong()
+        ok = ctypes.windll.kernel32.GetExitCodeProcess(  # type: ignore[attr-defined]
+            handle, ctypes.byref(exit_code)
+        )
+        if not ok:
+            return False
+        return int(exit_code.value) == STILL_ACTIVE
+    finally:
+        ctypes.windll.kernel32.CloseHandle(handle)  # type: ignore[attr-defined]
+
+
 def pid_is_alive(pid: int) -> bool:
     if pid <= 0:
         return False
+    if sys.platform == "win32":
+        try:
+            return _pid_is_alive_windows(pid)
+        except Exception:
+            return False
     try:
         os.kill(pid, 0)
     except ProcessLookupError:
@@ -244,3 +301,27 @@ def pid_is_alive(pid: int) -> bool:
     except OSError:
         return False
     return True
+
+
+def terminate_pid(pid: int) -> None:
+    """Best-effort terminate for a helper process we do not own via Popen."""
+    if pid <= 0:
+        return
+    if sys.platform == "win32":
+        import ctypes
+
+        PROCESS_TERMINATE = 0x0001
+        handle = ctypes.windll.kernel32.OpenProcess(  # type: ignore[attr-defined]
+            PROCESS_TERMINATE, False, int(pid)
+        )
+        if not handle:
+            return
+        try:
+            ctypes.windll.kernel32.TerminateProcess(handle, 1)  # type: ignore[attr-defined]
+        finally:
+            ctypes.windll.kernel32.CloseHandle(handle)  # type: ignore[attr-defined]
+        return
+    try:
+        os.kill(pid, 15)
+    except OSError:
+        pass

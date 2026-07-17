@@ -1,4 +1,10 @@
 # Runtime deps for Anki. Install into vendor/ with Anki's Python, e.g.:
 #   /path/to/AnkiProgramFiles/.venv/bin/python -m pip install -r requirements.txt -t vendor
+# Build vendor/ on the target OS (macOS wheels vs Windows wheels).
 pymunk>=7.0,<8
 rumps>=0.4.0; sys_platform == "darwin"
+pystray>=0.19.0; sys_platform == "win32"
+Pillow>=10.0.0; sys_platform == "win32"
+winrt-runtime>=3.0; sys_platform == "win32"
+winrt-Windows.Foundation>=3.0; sys_platform == "win32"
+winrt-Windows.Media.Control>=3.0; sys_platform == "win32"

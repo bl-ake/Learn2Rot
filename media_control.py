@@ -5,17 +5,21 @@
 
 from __future__ import annotations
 
+import asyncio
 import ctypes
 import json
 import platform
 import subprocess
 from dataclasses import dataclass
-from typing import Callable, Optional, Protocol
+from typing import Any, Awaitable, Callable, Optional, Protocol
 
 
 _OSASCRIPT_TIMEOUT_SEC = 2.0
 _MEDIAREMOTE_PATH = (
     "/System/Library/PrivateFrameworks/MediaRemote.framework/MediaRemote"
+)
+_UNSUPPORTED_MESSAGE = (
+    "System media control is only available on macOS and Windows"
 )
 
 # Now Playing is read via osascript (entitled); commands go through the C API —
@@ -68,8 +72,13 @@ _CMD_PAUSE = 1
 _CMD_TOGGLE = 2
 _CMD_STOP = 3
 
+# SMTC playback status enum value for Playing (Windows.Media.Control).
+_SMTC_PLAYING = 4
+
 OsascriptRunner = Callable[[list[str]], subprocess.CompletedProcess[str]]
 CommandSender = Callable[[int], bool]
+AsyncRunner = Callable[[Awaitable[Any]], Any]
+SmtcBackendFactory = Callable[[], Any]
 
 
 @dataclass
@@ -82,7 +91,7 @@ class NowPlayingInfo:
 
     def display_label(self) -> str:
         if not self.supported:
-            return self.error or "System media control is only available on macOS"
+            return self.error or _UNSUPPORTED_MESSAGE
         if self.error and not self.title and not self.artist:
             return self.error
         title = (self.title or "").strip()
@@ -145,10 +154,24 @@ def _ctypes_send_command(command: int) -> bool:
         return False
 
 
+def _run_async(coro: Awaitable[Any]) -> Any:
+    """Run an awaitable from sync code (helper timer / Anki main thread)."""
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        return asyncio.run(coro)
+    # Already inside a loop (unusual for this add-on): run in a fresh loop
+    # on a throwaway thread so we never nest asyncio.run.
+    import concurrent.futures
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+        return pool.submit(asyncio.run, coro).result()
+
+
 class UnsupportedMediaController:
     """Stub for platforms without system Now Playing control."""
 
-    _MESSAGE = "System media control is only available on macOS"
+    _MESSAGE = _UNSUPPORTED_MESSAGE
 
     def get_now_playing(self) -> NowPlayingInfo:
         return NowPlayingInfo(supported=False, error=self._MESSAGE)
@@ -243,13 +266,162 @@ class DarwinMediaController:
             return False
 
 
+def _default_smtc_backend_factory() -> Any:
+    """Load GlobalSystemMediaTransportControlsSessionManager (PyWinRT)."""
+    from winrt.windows.media.control import (  # type: ignore[import-untyped]
+        GlobalSystemMediaTransportControlsSessionManager as SessionManager,
+    )
+
+    return _run_async(SessionManager.request_async())
+
+
+def _smtc_status_is_playing(status: Any) -> bool:
+    try:
+        value = int(status)
+    except (TypeError, ValueError):
+        value = getattr(status, "value", status)
+        try:
+            value = int(value)
+        except (TypeError, ValueError):
+            return False
+    return value == _SMTC_PLAYING
+
+
+class WindowsMediaController:
+    """Windows Now Playing via System Media Transport Controls (SMTC)."""
+
+    def __init__(
+        self,
+        *,
+        backend_factory: Optional[SmtcBackendFactory] = None,
+        async_runner: Optional[AsyncRunner] = None,
+    ) -> None:
+        self._backend_factory = backend_factory or _default_smtc_backend_factory
+        self._async_runner = async_runner or _run_async
+        self._last: NowPlayingInfo = NowPlayingInfo()
+
+    def get_now_playing(self) -> NowPlayingInfo:
+        try:
+            manager = self._backend_factory()
+            if manager is None:
+                info = NowPlayingInfo(
+                    title=self._last.title,
+                    artist=self._last.artist,
+                    is_playing=False,
+                    error="SMTC session manager unavailable",
+                )
+                self._last = info
+                return info
+            session = manager.get_current_session()
+            if session is None:
+                info = NowPlayingInfo(is_playing=False)
+                self._last = info
+                return info
+            playback = session.get_playback_info()
+            status = getattr(playback, "playback_status", None) if playback else None
+            playing = _smtc_status_is_playing(status)
+            title = ""
+            artist = ""
+            try:
+                props = self._async_runner(session.try_get_media_properties_async())
+            except Exception as exc:
+                info = NowPlayingInfo(
+                    title=self._last.title,
+                    artist=self._last.artist,
+                    is_playing=playing,
+                    error=str(exc),
+                )
+                self._last = info
+                return info
+            if props is not None:
+                title = str(getattr(props, "title", "") or "")
+                artist = str(getattr(props, "artist", "") or "")
+            info = NowPlayingInfo(title=title, artist=artist, is_playing=playing)
+            self._last = info
+            return info
+        except Exception as exc:
+            info = NowPlayingInfo(
+                title=self._last.title,
+                artist=self._last.artist,
+                is_playing=False,
+                error=str(exc),
+            )
+            self._last = info
+            return info
+
+    def play(self) -> bool:
+        return self._with_current_session(
+            lambda session: self._async_runner(session.try_play_async())
+        )
+
+    def pause(self) -> bool:
+        """Pause all currently playing sessions (lockout parity with MediaRemote)."""
+        try:
+            manager = self._backend_factory()
+            if manager is None:
+                return False
+            sessions = list(manager.get_sessions() or [])
+            if not sessions:
+                current = manager.get_current_session()
+                if current is None:
+                    return False
+                return self._pause_session(current)
+            any_ok = False
+            for session in sessions:
+                playback = session.get_playback_info()
+                status = getattr(playback, "playback_status", None) if playback else None
+                if not _smtc_status_is_playing(status):
+                    continue
+                if self._pause_session(session):
+                    any_ok = True
+            return any_ok
+        except Exception:
+            return False
+
+    def _pause_session(self, session: Any) -> bool:
+        try:
+            if self._async_runner(session.try_pause_async()):
+                return True
+            return bool(self._async_runner(session.try_stop_async()))
+        except Exception:
+            return False
+
+    def toggle(self) -> bool:
+        return self._with_current_session(
+            lambda session: self._async_runner(session.try_toggle_play_pause_async())
+        )
+
+    def _with_current_session(self, action: Callable[[Any], Any]) -> bool:
+        try:
+            manager = self._backend_factory()
+            if manager is None:
+                return False
+            session = manager.get_current_session()
+            if session is None:
+                return False
+            return bool(action(session))
+        except Exception:
+            return False
+
+
+def _is_windows(name: str) -> bool:
+    return name in ("windows", "win32")
+
+
 def create_media_controller(
     *,
     system: Optional[str] = None,
     runner: Optional[OsascriptRunner] = None,
     command_sender: Optional[CommandSender] = None,
+    smtc_backend_factory: Optional[SmtcBackendFactory] = None,
+    async_runner: Optional[AsyncRunner] = None,
 ) -> MediaController:
     name = (system or platform.system()).lower()
     if name == "darwin":
         return DarwinMediaController(runner=runner, command_sender=command_sender)
+    if _is_windows(name):
+        return WindowsMediaController(
+            backend_factory=smtc_backend_factory,
+            async_runner=async_runner,
+        )
     return UnsupportedMediaController()

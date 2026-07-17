@@ -112,3 +112,15 @@ def test_prefs_from_config() -> None:
     assert prefs["quit_with_anki"] is False
     assert prefs["enforce"] is True
     assert prefs["show_menubar_watch_time"] is False
+
+
+def test_pid_is_alive_rejects_invalid() -> None:
+    ws = load_addon_module("watch_state", "watch_state.py")
+    assert ws.pid_is_alive(0) is False
+    assert ws.pid_is_alive(-1) is False
+
+
+def test_terminate_pid_noop_for_invalid() -> None:
+    ws = load_addon_module("watch_state", "watch_state.py")
+    ws.terminate_pid(0)
+    ws.terminate_pid(-5)

@@ -1,7 +1,7 @@
 # Copyright (C) 2026 bl-ake
 # SPDX-License-Identifier: AGPL-3.0-or-later
 
-"""Anki-side controller for the macOS watch daemon (menubar + media lockout).
+"""Anki-side controller for the watch daemon (menubar/tray + media lockout).
 
 Spawns watch_helper.py. The helper owns budget drain and Now Playing pause;
 this module pushes credits/prefs and polls for UI sync.
@@ -27,6 +27,7 @@ from .watch_state import (
     pid_is_alive,
     prefs_from_config,
     read_state,
+    terminate_pid,
     update_state,
     write_exit,
 )
@@ -59,8 +60,9 @@ def tooltip_for_seconds(seconds: int) -> str:
     return f"Anki Media Timer — time remaining: {format_seconds(seconds)}"
 
 
-def _is_darwin() -> bool:
-    return platform.system().lower() == "darwin"
+def _supports_watch_daemon() -> bool:
+    name = platform.system().lower()
+    return name in ("darwin", "windows")
 
 
 def _state_path() -> Path:
@@ -80,8 +82,8 @@ def _vendor_dir() -> Path:
 
 
 def _should_run_daemon() -> bool:
-    """Daemon runs on macOS for system enforcement and/or menubar display."""
-    if not _is_darwin():
+    """Daemon runs on macOS/Windows for system enforcement and/or tray display."""
+    if not _supports_watch_daemon():
         return False
     if not _addon_module:
         return True
@@ -125,7 +127,7 @@ class WatchDaemonController:
         self._on_poll()
 
     def credit(self, seconds: int) -> None:
-        if seconds <= 0 or not _is_darwin():
+        if seconds <= 0 or not _supports_watch_daemon():
             return
 
         def mutator(state: dict) -> None:
@@ -139,7 +141,7 @@ class WatchDaemonController:
             log_exception("watch_daemon: credit failed")
 
     def subtract(self, seconds: int) -> None:
-        if seconds <= 0 or not _is_darwin():
+        if seconds <= 0 or not _supports_watch_daemon():
             return
 
         def mutator(state: dict) -> None:
@@ -153,7 +155,7 @@ class WatchDaemonController:
             log_exception("watch_daemon: subtract failed")
 
     def push_prefs(self, *, budget_seconds: Optional[int] = None) -> None:
-        if not _is_darwin() or not _addon_module:
+        if not _supports_watch_daemon() or not _addon_module:
             return
         seconds = budget_seconds
         if seconds is None:
@@ -307,6 +309,11 @@ class WatchDaemonController:
             "stderr": subprocess.DEVNULL,
             "start_new_session": True,
         }
+        if sys.platform == "win32":
+            # Avoid a flashing console window for the tray helper.
+            creationflags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+            if creationflags:
+                popen_kwargs["creationflags"] = creationflags
         if _addon_module and bool(
             get_config(_addon_module).get("debug_logging", False)
         ):
@@ -350,10 +357,7 @@ class WatchDaemonController:
                     pass
             log(f"watch_daemon: stopped helper pid={proc.pid}")
         elif pid_is_alive(pid):
-            try:
-                os.kill(pid, 15)
-            except OSError:
-                pass
+            terminate_pid(pid)
             log(f"watch_daemon: signaled helper pid={pid}")
 
 
@@ -365,7 +369,7 @@ def _get_controller() -> WatchDaemonController:
 
 
 def start_watch_daemon(*, budget_seconds: int, force: bool = False) -> None:
-    if not _is_darwin():
+    if not _supports_watch_daemon():
         return
     try:
         _get_controller().start(budget_seconds=budget_seconds, force=force)
@@ -374,7 +378,7 @@ def start_watch_daemon(*, budget_seconds: int, force: bool = False) -> None:
 
 
 def credit_watch_time(seconds: int) -> None:
-    if not _is_darwin():
+    if not _supports_watch_daemon():
         return
     try:
         _get_controller().credit(seconds)
@@ -383,7 +387,7 @@ def credit_watch_time(seconds: int) -> None:
 
 
 def subtract_watch_time(seconds: int) -> None:
-    if not _is_darwin():
+    if not _supports_watch_daemon():
         return
     try:
         _get_controller().subtract(seconds)
@@ -393,7 +397,7 @@ def subtract_watch_time(seconds: int) -> None:
 
 def publish_budget(seconds: int) -> None:
     """Push absolute budget for display when Anki owns the clock (YouTube mode)."""
-    if not _is_darwin():
+    if not _supports_watch_daemon():
         return
 
     def mutator(state: dict) -> None:
@@ -411,7 +415,7 @@ def publish_budget(seconds: int) -> None:
 
 
 def refresh_watch_daemon(*, budget_seconds: Optional[int] = None) -> None:
-    if not _is_darwin():
+    if not _supports_watch_daemon():
         return
     try:
         _get_controller().push_prefs(budget_seconds=budget_seconds)
@@ -425,4 +429,3 @@ def shutdown_watch_daemon(*, quit_helper: Optional[bool] = None) -> None:
         _controller.shutdown(quit_helper=quit_helper)
         _controller = None
         log("watch_daemon: controller cleared")
-

@@ -1066,9 +1066,9 @@ class AnkiTubeDock(QDockWidget):
         self._update_now_playing_label()
         if not info.supported:
             showWarning(
-                "System media control is only available on macOS.\n\n"
-                "Enable the embedded YouTube player in Settings, "
-                "or use AnkiTube on macOS."
+                "System media control is only available on macOS and Windows.\n\n"
+                "Enable the embedded YouTube player (legacy) in Settings, "
+                "or use AnkiTube on macOS or Windows."
             )
             return
         if not self._budget.has_time():
@@ -1082,7 +1082,8 @@ class AnkiTubeDock(QDockWidget):
         if not self._media.play():
             showWarning(
                 "Could not start system media playback.\n\n"
-                "Make sure an app has Now Playing media available."
+                "Make sure an app is publishing system media "
+                "(Now Playing / SMTC)."
             )
             return
         # Drain / lockout are owned by the watch daemon.

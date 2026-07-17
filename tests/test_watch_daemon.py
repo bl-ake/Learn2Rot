@@ -22,9 +22,9 @@ def test_label_and_tooltip() -> None:
     assert "Anki Media Timer" in daemon.tooltip_for_seconds(65)
 
 
-def test_start_skips_non_darwin(mock_mw) -> None:
+def test_start_skips_unsupported(mock_mw) -> None:
     daemon = load_addon_module("watch_daemon", "watch_daemon.py")
-    with patch.object(daemon, "_is_darwin", return_value=False):
+    with patch.object(daemon, "_supports_watch_daemon", return_value=False):
         daemon.start_watch_daemon(budget_seconds=30, force=True)
     assert daemon._controller is None
 
@@ -33,7 +33,7 @@ def test_should_run_for_system_mode(mock_mw) -> None:
     config_mod = load_addon_module("config", "config.py")
     daemon = load_addon_module("watch_daemon", "watch_daemon.py")
     daemon.set_addon_module("AnkiTube")
-    with patch.object(daemon, "_is_darwin", return_value=True):
+    with patch.object(daemon, "_supports_watch_daemon", return_value=True):
         assert daemon._should_run_daemon() is True
         config_mod.save_preferences(
             "AnkiTube",
@@ -55,7 +55,7 @@ def test_credit_writes_state(mock_mw, tmp_path) -> None:
     state_path = tmp_path / ws.STATE_FILENAME
     ws.write_state(state_path, {"budget_seconds": 10, "credits": 0})
 
-    with patch.object(daemon, "_is_darwin", return_value=True):
+    with patch.object(daemon, "_supports_watch_daemon", return_value=True):
         daemon.credit_watch_time(15)
 
     state = ws.read_state(state_path)
@@ -72,7 +72,7 @@ def test_start_writes_prefs_and_starts_helper(mock_mw, tmp_path) -> None:
     fake_proc.poll.return_value = None
     fake_proc.pid = 4242
 
-    with patch.object(daemon, "_is_darwin", return_value=True), patch(
+    with patch.object(daemon, "_supports_watch_daemon", return_value=True), patch(
         "subprocess.Popen", return_value=fake_proc
     ) as popen:
         daemon.start_watch_daemon(budget_seconds=125, force=True)
@@ -86,3 +86,13 @@ def test_start_writes_prefs_and_starts_helper(mock_mw, tmp_path) -> None:
     assert popen.called
     assert daemon._controller is not None
     daemon.shutdown_watch_daemon(quit_helper=True)
+
+
+def test_supports_watch_daemon_platforms() -> None:
+    daemon = load_addon_module("watch_daemon", "watch_daemon.py")
+    with patch.object(daemon.platform, "system", return_value="Darwin"):
+        assert daemon._supports_watch_daemon() is True
+    with patch.object(daemon.platform, "system", return_value="Windows"):
+        assert daemon._supports_watch_daemon() is True
+    with patch.object(daemon.platform, "system", return_value="Linux"):
+        assert daemon._supports_watch_daemon() is False

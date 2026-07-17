@@ -39,20 +39,28 @@ Clone into your Anki add-ons folder and restart Anki. When packaging locally, us
 
 ### Runtime dependencies (`vendor/`)
 
-Budget overlay physics needs [pymunk](https://www.pymunk.org/). Anki Media Timer (menu bar + Now Playing lockout) needs [rumps](https://github.com/jaredks/rumps) (and PyObjC). Install both into `vendor/` with the **same Python Anki ships** (Anki 25.x uses 3.13):
+Budget overlay physics needs [pymunk](https://www.pymunk.org/).
+
+Anki Media Timer (menu bar / tray + system media lockout) needs platform packages:
+
+- **macOS:** [rumps](https://github.com/jaredks/rumps) (and PyObjC)
+- **Windows:** [pystray](https://github.com/moses-palmer/pystray), Pillow, and [PyWinRT](https://github.com/pywinrt/pywinrt) SMTC bindings (`winrt-Windows.Media.Control`, etc.)
+
+Install into `vendor/` with the **same Python Anki ships** (Anki 25.x uses 3.13), on the **target OS** (macOS and Windows wheels differ):
 
 ```bash
-# Prefer Anki's uv-managed venv when present:
+# Prefer Anki's uv-managed venv when present (macOS example):
 "$HOME/Library/Application Support/AnkiProgramFiles/.venv/bin/python" \
   -m pip install -r requirements.txt -t vendor
 ```
+
+On Windows, use Anki’s bundled Python the same way (`…\AnkiProgramFiles\.venv\Scripts\python.exe -m pip install -r requirements.txt -t vendor`).
 
 For tests/dev in a virtualenv:
 
 ```bash
 pip install -r requirements-dev.txt
 ```
-
 ## Code style
 
 - Match existing module layout and naming.
