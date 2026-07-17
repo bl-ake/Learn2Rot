@@ -32,16 +32,16 @@ def test_start_skips_unsupported(mock_mw) -> None:
 def test_should_run_for_system_mode(mock_mw) -> None:
     config_mod = load_addon_module("config", "config.py")
     daemon = load_addon_module("watch_daemon", "watch_daemon.py")
-    daemon.set_addon_module("AnkiTube")
+    daemon.set_addon_module("Learn2Rot")
     with patch.object(daemon, "_supports_watch_daemon", return_value=True):
         assert daemon._should_run_daemon() is True
         config_mod.save_preferences(
-            "AnkiTube",
+            "Learn2Rot",
             {"media_mode": "youtube", "show_menubar_watch_time": False},
         )
         assert daemon._should_run_daemon() is False
         config_mod.save_preferences(
-            "AnkiTube",
+            "Learn2Rot",
             {"media_mode": "youtube", "show_menubar_watch_time": True},
         )
         assert daemon._should_run_daemon() is True
@@ -50,7 +50,7 @@ def test_should_run_for_system_mode(mock_mw) -> None:
 def test_credit_writes_state(mock_mw, tmp_path) -> None:
     daemon = load_addon_module("watch_daemon", "watch_daemon.py")
     ws = load_addon_module("watch_state", "watch_state.py")
-    daemon.set_addon_module("AnkiTube")
+    daemon.set_addon_module("Learn2Rot")
     mock_mw.pm.profileFolder.return_value = str(tmp_path)
     state_path = tmp_path / ws.STATE_FILENAME
     ws.write_state(state_path, {"budget_seconds": 10, "credits": 0})
@@ -65,7 +65,7 @@ def test_credit_writes_state(mock_mw, tmp_path) -> None:
 
 def test_start_writes_prefs_and_starts_helper(mock_mw, tmp_path) -> None:
     daemon = load_addon_module("watch_daemon", "watch_daemon.py")
-    daemon.set_addon_module("AnkiTube")
+    daemon.set_addon_module("Learn2Rot")
     mock_mw.pm.profileFolder.return_value = str(tmp_path)
 
     fake_proc = MagicMock()
@@ -77,7 +77,7 @@ def test_start_writes_prefs_and_starts_helper(mock_mw, tmp_path) -> None:
     ) as popen:
         daemon.start_watch_daemon(budget_seconds=125, force=True)
 
-    state = tmp_path / "ankitube_watch_state.json"
+    state = tmp_path / "learn2rot_watch_state.json"
     assert state.exists()
     payload = json.loads(state.read_text(encoding="utf-8"))
     assert payload["budget_seconds"] == 125

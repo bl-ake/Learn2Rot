@@ -10,13 +10,13 @@ from types import ModuleType
 from unittest.mock import MagicMock
 
 ADDON_ROOT = Path(__file__).resolve().parents[1]
-_PKG = "ankitube_test"
+_PKG = "learn2rot_test"
 
 
 def _ensure_aqt_mock() -> MagicMock:
     mw = MagicMock()
     stored: dict = {}
-    mw._ankitube_test_config = stored  # type: ignore[attr-defined]
+    mw._learn2rot_test_config = stored  # type: ignore[attr-defined]
 
     def get_config(_module: str) -> dict:
         return dict(stored)
@@ -30,7 +30,7 @@ def _ensure_aqt_mock() -> MagicMock:
     mw.state = "review"
     mw.pm.profileFolder.return_value = str(ADDON_ROOT)
     mw.serverURL.return_value = "http://127.0.0.1:12345/"
-    mw.addonManager.addonFromModule.return_value = "AnkiTube"
+    mw.addonManager.addonFromModule.return_value = "Learn2Rot"
     mw.taskman.run_on_main.side_effect = lambda fn: fn()
 
     aqt = ModuleType("aqt")

@@ -26,7 +26,7 @@ try:
 except ImportError:  # pragma: no cover - non-Windows
     msvcrt = None  # type: ignore[assignment]
 
-STATE_FILENAME = "ankitube_watch_state.json"
+STATE_FILENAME = "learn2rot_watch_state.json"
 EXIT_SENTINEL = "__EXIT__"
 
 DEFAULT_PREFS: dict[str, Any] = {
@@ -145,7 +145,7 @@ def write_state(path: Path, state: dict[str, Any]) -> None:
     payload = normalize_state(state)
     text = json.dumps(payload, ensure_ascii=True) + "\n"
     fd, tmp_name = tempfile.mkstemp(
-        dir=str(path.parent), prefix=".ankitube_watch_", suffix=".tmp"
+        dir=str(path.parent), prefix=".learn2rot_watch_", suffix=".tmp"
     )
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as handle:

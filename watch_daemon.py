@@ -318,7 +318,7 @@ class WatchDaemonController:
             get_config(_addon_module).get("debug_logging", False)
         ):
             try:
-                helper_log = state_path.parent / "ankitube_watch_helper.log"
+                helper_log = state_path.parent / "learn2rot_watch_helper.log"
                 log_file = helper_log.open("a", encoding="utf-8")
                 popen_kwargs["stdout"] = log_file
                 popen_kwargs["stderr"] = subprocess.STDOUT

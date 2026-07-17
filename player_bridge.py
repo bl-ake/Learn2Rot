@@ -17,13 +17,13 @@ from .config import get_config
 from .logger import log
 
 if TYPE_CHECKING:
-    from .dock import AnkiTubeDock
+    from .dock import Learn2RotDock
 
 
 class PlayerBridge:
-    CMD_PREFIX = "ankittube:"
+    CMD_PREFIX = "learn2rot:"
 
-    def __init__(self, addon_module: str, dock: "AnkiTubeDock") -> None:
+    def __init__(self, addon_module: str, dock: "Learn2RotDock") -> None:
         self._addon_module = addon_module
         self._dock = dock
         self._player_ready = False
@@ -145,13 +145,13 @@ class PlayerBridge:
         self.active_web().evalWithCallback(script, callback)
 
     def pause(self) -> None:
-        self.eval_js("window.ankittube.pause();")
+        self.eval_js("window.learn2rot.pause();")
 
     def on_web_load_finished(self, ok: bool) -> None:
         log(f"webview loadFinished ok={ok} url={self.player_url().toString()}")
         if not ok:
             return
-        self.eval_js_check("typeof window.ankittube", "ankittube type")
+        self.eval_js_check("typeof window.learn2rot", "learn2rot type")
         self.eval_js_check("document.title", "document title")
         self._dock._sync_player_with_queue()
 
@@ -175,7 +175,7 @@ class PlayerBridge:
         if message == "player_ready":
             dock._update_duration_from_player()
             if self._pending_play and dock._budget.has_time():
-                self.eval_js("window.ankittube.play();")
+                self.eval_js("window.learn2rot.play();")
             return
 
         if message.startswith("position:"):
@@ -219,7 +219,7 @@ class PlayerBridge:
             dock._save_state()
             if not dock._queue.items:
                 dock._pause_playback()
-                self.eval_js("window.ankittube.clear();")
+                self.eval_js("window.learn2rot.clear();")
             elif not was_last and dock._budget.has_time():
                 dock._play_current()
             elif dock._budget.has_time():
@@ -239,10 +239,10 @@ class PlayerBridge:
         if autoplay:
             self._pending_play = True
             self.eval_js(
-                f"window.ankittube.resumeOrPlay({json.dumps(video_id)});"
+                f"window.learn2rot.resumeOrPlay({json.dumps(video_id)});"
             )
         else:
             self._pending_play = False
             self.eval_js(
-                f"window.ankittube.loadVideo({json.dumps(video_id)}, {start});"
+                f"window.learn2rot.loadVideo({json.dumps(video_id)}, {start});"
             )

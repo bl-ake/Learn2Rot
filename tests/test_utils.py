@@ -42,7 +42,7 @@ def test_format_seconds() -> None:
 
 def test_local_file_uri_uses_forward_slashes(tmp_path) -> None:
     utils = load_addon_module("utils", "utils.py")
-    log_file = tmp_path / "ankittube.log"
+    log_file = tmp_path / "learn2rot.log"
     log_file.write_text("test", encoding="utf-8")
     uri = utils.local_file_uri(str(log_file))
     assert uri.startswith("file://")

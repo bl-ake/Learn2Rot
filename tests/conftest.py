@@ -1,7 +1,7 @@
 # Copyright (C) 2026 bl-ake
 # SPDX-License-Identifier: AGPL-3.0-or-later
 
-"""Pytest fixtures for AnkiTube tests."""
+"""Pytest fixtures for Learn2Rot tests."""
 
 from __future__ import annotations
 
@@ -21,7 +21,7 @@ import addon_loader  # noqa: E402,F401 — installs Anki mocks
 @pytest.fixture
 def mock_mw() -> MagicMock:
     mw = sys.modules["aqt"].mw
-    stored = getattr(mw, "_ankitube_test_config", None)
+    stored = getattr(mw, "_learn2rot_test_config", None)
     if isinstance(stored, dict):
         stored.clear()
     return mw

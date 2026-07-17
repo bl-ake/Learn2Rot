@@ -1,7 +1,7 @@
 # Copyright (C) 2026 bl-ake
 # SPDX-License-Identifier: AGPL-3.0-or-later
 
-"""AnkiTube hook handlers and menu setup."""
+"""Learn2Rot hook handlers and menu setup."""
 
 from __future__ import annotations
 
@@ -23,10 +23,10 @@ from .utils import local_file_uri
 
 if TYPE_CHECKING:
     from .budget import BudgetManager
-    from .dock import AnkiTubeDock
+    from .dock import Learn2RotDock
     from .overlay import BudgetOverlayController
 
-_dock: Optional["AnkiTubeDock"] = None
+_dock: Optional["Learn2RotDock"] = None
 _budget: Optional["BudgetManager"] = None
 _overlay: Optional["BudgetOverlayController"] = None
 _addon_module: str = ""
@@ -50,12 +50,12 @@ def get_budget() -> "BudgetManager":
     return _budget
 
 
-def get_dock() -> "AnkiTubeDock":
+def get_dock() -> "Learn2RotDock":
     global _dock
-    from .dock import AnkiTubeDock
+    from .dock import Learn2RotDock
 
     if _dock is None:
-        _dock = AnkiTubeDock(_addon_module, get_budget())
+        _dock = Learn2RotDock(_addon_module, get_budget())
     return _dock
 
 
@@ -151,7 +151,7 @@ def open_settings() -> None:
 def open_debug_log() -> None:
     path = log_path()
     if not os.path.exists(path):
-        showInfo("No AnkiTube debug log exists yet.\n\nEnable debug logging in Settings first.")
+        showInfo("No Learn2Rot debug log exists yet.\n\nEnable debug logging in Settings first.")
         return
     if not QDesktopServices.openUrl(QUrl(local_file_uri(path))):
         showInfo(f"Could not open the debug log.\n\nPath:\n{path}")
@@ -160,7 +160,7 @@ def open_debug_log() -> None:
 def clear_debug_log() -> None:
     clear_log()
     log("debug log cleared")
-    showInfo("AnkiTube debug log cleared.")
+    showInfo("Learn2Rot debug log cleared.")
 
 
 def on_profile_open() -> None:
@@ -238,7 +238,7 @@ def on_state_change(new_state, old_state) -> None:
 
 
 def setup_menu() -> None:
-    menu = QMenu("AnkiTube", mw)
+    menu = QMenu("Learn2Rot", mw)
     mw.form.menuTools.addMenu(menu)
 
     play_action = QAction("Play", mw)

@@ -1,6 +1,6 @@
 ---
 name: Bug report
-about: Report a problem with AnkiTube
+about: Report a problem with Learn2Rot
 title: ""
 labels: bug
 assignees: ""
@@ -9,7 +9,7 @@ assignees: ""
 ## Environment
 
 - Anki version (Help → About):
-- AnkiTube version (release tag or commit):
+- Learn2Rot version (release tag or commit):
 - Operating system:
 
 ## Steps to reproduce
@@ -28,13 +28,13 @@ assignees: ""
 
 ## Checklist
 
-- [ ] I restarted Anki after installing or updating AnkiTube
+- [ ] I restarted Anki after installing or updating Learn2Rot
 - [ ] I tested with other add-ons disabled
-- [ ] I am on the latest AnkiTube release (or latest `main`)
+- [ ] I am on the latest Learn2Rot release (or latest `main`)
 
 ## Debug info
 
-Enable **Debug logging** in AnkiTube settings, reproduce the issue, then paste relevant lines from `ankittube.log` (Tools → AnkiTube → View Debug Log):
+Enable **Debug logging** in Learn2Rot settings, reproduce the issue, then paste relevant lines from `learn2rot.log` (Tools → Learn2Rot → View Debug Log):
 
 ```
 (paste here)

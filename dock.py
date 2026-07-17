@@ -1,7 +1,7 @@
 # Copyright (C) 2026 bl-ake
 # SPDX-License-Identifier: AGPL-3.0-or-later
 
-"""AnkiTube dock widget — orchestrates budget, system media, and legacy player."""
+"""Learn2Rot dock widget — orchestrates budget, system media, and legacy player."""
 
 from __future__ import annotations
 
@@ -49,7 +49,7 @@ from .utils import (
 )
 from . import watch_daemon
 from .widgets import (
-    AnkiTubePanel,
+    Learn2RotPanel,
     FullscreenPlayer,
     MainWindowResizeFilter,
     PlayerShortcutFilter,
@@ -78,9 +78,9 @@ QPushButton:disabled {
 """
 
 
-class AnkiTubeDock(QDockWidget):
+class Learn2RotDock(QDockWidget):
     def __init__(self, addon_module: str, budget: BudgetManager) -> None:
-        super().__init__("AnkiTube", mw)
+        super().__init__("Learn2Rot", mw)
         self._addon_module = addon_module
         self._budget = budget
         self._queue = VideoQueue()
@@ -119,7 +119,7 @@ class AnkiTubeDock(QDockWidget):
         self._system_poll_timer = QTimer(self)
         self._system_poll_timer.timeout.connect(self._on_system_media_poll)
 
-        log("AnkiTube dock initializing")
+        log("Learn2Rot dock initializing")
         self._build_ui()
         self._load_state()
         self._update_budget_ui()
@@ -155,7 +155,7 @@ class AnkiTubeDock(QDockWidget):
             log("system mode: dock hidden (budget cubes overlay is primary UI)")
 
     def _build_ui(self) -> None:
-        container = AnkiTubePanel(self)
+        container = Learn2RotPanel(self)
         container.setStyleSheet(_DOCK_BUTTON_STYLE)
         layout = QVBoxLayout(container)
         layout.setContentsMargins(8, 8, 8, 8)
@@ -288,7 +288,7 @@ class AnkiTubeDock(QDockWidget):
         self._apply_playback_button_visibility()
 
         self.setWidget(container)
-        self.setObjectName("AnkiTubeDock")
+        self.setObjectName("Learn2RotDock")
         self.setFeatures(
             QDockWidget.DockWidgetFeature.DockWidgetMovable
             | QDockWidget.DockWidgetFeature.DockWidgetClosable
@@ -462,9 +462,9 @@ class AnkiTubeDock(QDockWidget):
         player = self._fullscreen
         if player is None or not player.isVisible() or player._closing:
             return
-        player._web.eval("window.ankittube.pause();")
+        player._web.eval("window.learn2rot.pause();")
         player._web.evalWithCallback(
-            "window.ankittube ? window.ankittube.getCurrentTime() : 0",
+            "window.learn2rot ? window.learn2rot.getCurrentTime() : 0",
             lambda result: self._finish_close_fullscreen(player, result),
         )
 
@@ -494,7 +494,7 @@ class AnkiTubeDock(QDockWidget):
                 pass
         self._bridge.load_video(item.video_id, start_seconds, autoplay=False)
         if self._is_playing and self._budget.has_time():
-            self._bridge.eval_js("window.ankittube.play();")
+            self._bridge.eval_js("window.learn2rot.play();")
 
     def _restore_splitter_sizes(self) -> None:
         sizes = self._persistence.load_splitter_sizes()
@@ -691,7 +691,7 @@ class AnkiTubeDock(QDockWidget):
             self._update_position_cache(item.video_id, seconds)
 
         self._bridge.eval_with_callback(
-            "window.ankittube ? window.ankittube.getCurrentTime() : 0",
+            "window.learn2rot ? window.learn2rot.getCurrentTime() : 0",
             on_time,
         )
 
@@ -707,7 +707,7 @@ class AnkiTubeDock(QDockWidget):
                 callback()
 
         self._bridge.eval_with_callback(
-            "window.ankittube ? window.ankittube.getCurrentTime() : 0",
+            "window.learn2rot ? window.learn2rot.getCurrentTime() : 0",
             on_time,
         )
 
@@ -738,7 +738,7 @@ class AnkiTubeDock(QDockWidget):
             self._mw_resize_filter = None
 
     def shutdown(self) -> None:
-        log("AnkiTube dock shutting down")
+        log("Learn2Rot dock shutting down")
         self._timer.stop()
         self._stop_system_media_polling()
         self._startup_grace_timer.stop()
@@ -893,7 +893,7 @@ class AnkiTubeDock(QDockWidget):
             self._save_state()
 
         self._bridge.eval_with_callback(
-            "window.ankittube ? window.ankittube.getDuration() : 0",
+            "window.learn2rot ? window.learn2rot.getDuration() : 0",
             on_duration,
         )
 
@@ -988,7 +988,7 @@ class AnkiTubeDock(QDockWidget):
         if not self._queue.items:
             self._queue.current_index = -1
             self._pause_playback()
-            self._bridge.eval_js("window.ankittube.clear();")
+            self._bridge.eval_js("window.learn2rot.clear();")
         elif row == self._queue.current_index:
             self._queue.current_index = min(row, len(self._queue.items) - 1)
             self._load_current_video(autoplay=self._is_playing)
@@ -1056,7 +1056,7 @@ class AnkiTubeDock(QDockWidget):
         item = self._current_item()
         assert item is not None
         self._bridge.eval_js(
-            f"window.ankittube.resumeOrPlay({json.dumps(item.video_id)});"
+            f"window.learn2rot.resumeOrPlay({json.dumps(item.video_id)});"
         )
         self._refresh_queue_ui()
 
@@ -1068,7 +1068,7 @@ class AnkiTubeDock(QDockWidget):
             showWarning(
                 "System media control is only available on macOS and Windows.\n\n"
                 "Enable the embedded YouTube player (legacy) in Settings, "
-                "or use AnkiTube on macOS or Windows."
+                "or use Learn2Rot on macOS or Windows."
             )
             return
         if not self._budget.has_time():
@@ -1108,17 +1108,17 @@ class AnkiTubeDock(QDockWidget):
     def _seek_relative(self, delta_seconds: float) -> None:
         if self._is_system_mode() or not self._current_item():
             return
-        self._bridge.eval_js(f"window.ankittube.seekBy({delta_seconds});")
+        self._bridge.eval_js(f"window.learn2rot.seekBy({delta_seconds});")
 
     def _adjust_volume(self, delta: int) -> None:
         if self._is_system_mode() or not self._current_item():
             return
-        self._bridge.eval_js(f"window.ankittube.adjustVolume({delta});")
+        self._bridge.eval_js(f"window.learn2rot.adjustVolume({delta});")
 
     def _toggle_captions(self) -> None:
         if self._is_system_mode() or not self._current_item():
             return
-        self._bridge.eval_js("window.ankittube.toggleCaptions();")
+        self._bridge.eval_js("window.learn2rot.toggleCaptions();")
 
     def hold_pause_begin(self) -> None:
         if self._hold_paused:
@@ -1166,7 +1166,7 @@ class AnkiTubeDock(QDockWidget):
                 if item:
                     self._bridge.pending_play = True
                     self._bridge.eval_js(
-                        f"window.ankittube.resumeOrPlay({json.dumps(item.video_id)});"
+                        f"window.learn2rot.resumeOrPlay({json.dumps(item.video_id)});"
                     )
                     self._refresh_queue_ui()
         log("hold pause end")
@@ -1218,7 +1218,7 @@ class AnkiTubeDock(QDockWidget):
             show_fullscreen(start_seconds)
 
         self._web.evalWithCallback(
-            "window.ankittube ? window.ankittube.getCurrentTime() : 0",
+            "window.learn2rot ? window.learn2rot.getCurrentTime() : 0",
             on_time,
         )
 

@@ -17,7 +17,7 @@ from addon_loader import load_addon_module
 def test_load_dock_visible_defaults_true(mock_mw) -> None:
     persistence_mod = load_addon_module("persistence", "persistence.py")
     budget = MagicMock()
-    persistence = persistence_mod.DockPersistence("AnkiTube", budget)
+    persistence = persistence_mod.DockPersistence("Learn2Rot", budget)
     assert persistence.load_dock_visible() is True
 
 
@@ -25,7 +25,7 @@ def test_save_state_persists_dock_visible(mock_mw) -> None:
     persistence_mod = load_addon_module("persistence", "persistence.py")
     queue_mod = load_addon_module("queue", "queue.py")
     budget = MagicMock()
-    persistence = persistence_mod.DockPersistence("AnkiTube", budget)
+    persistence = persistence_mod.DockPersistence("Learn2Rot", budget)
     queue = queue_mod.VideoQueue()
 
     persistence.save_state(

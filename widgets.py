@@ -32,11 +32,11 @@ from aqt.webview import AnkiWebView, AnkiWebViewKind
 from .utils import mime_has_youtube_url
 
 if TYPE_CHECKING:
-    from .dock import AnkiTubeDock
+    from .dock import Learn2RotDock
 
 
 class _UrlDropMixin:
-    _dock: "AnkiTubeDock"
+    _dock: "Learn2RotDock"
 
     def _accept_url_drag(self, event: QDragEnterEvent | QDropEvent) -> bool:
         if mime_has_youtube_url(event.mimeData()):
@@ -66,22 +66,22 @@ class _UrlDropMixin:
             super().dropEvent(event)
 
 
-class AnkiTubePanel(_UrlDropMixin, QWidget):
-    def __init__(self, dock: "AnkiTubeDock") -> None:
+class Learn2RotPanel(_UrlDropMixin, QWidget):
+    def __init__(self, dock: "Learn2RotDock") -> None:
         super().__init__()
         self._dock = dock
         self.setAcceptDrops(True)
 
 
 class QueueListWidget(_UrlDropMixin, QListWidget):
-    def __init__(self, dock: "AnkiTubeDock") -> None:
+    def __init__(self, dock: "Learn2RotDock") -> None:
         super().__init__()
         self._dock = dock
         self.setAcceptDrops(True)
 
 
 class MainWindowResizeFilter(QObject):
-    def __init__(self, dock: "AnkiTubeDock") -> None:
+    def __init__(self, dock: "Learn2RotDock") -> None:
         super().__init__(dock)
         self._dock = dock
 
@@ -95,7 +95,7 @@ class PlayerShortcutFilter(QObject):
     SEEK_SECONDS = 5
     VOLUME_STEP = 5
 
-    def __init__(self, dock: "AnkiTubeDock") -> None:
+    def __init__(self, dock: "Learn2RotDock") -> None:
         super().__init__(dock)
         self._dock = dock
 
@@ -203,14 +203,14 @@ class PlayerShortcutFilter(QObject):
 
 
 class FullscreenPlayer(QMainWindow):
-    def __init__(self, dock: "AnkiTubeDock") -> None:
+    def __init__(self, dock: "Learn2RotDock") -> None:
         super().__init__(parent=mw, flags=Qt.WindowType.Window)
         self._dock = dock
         self._closing = False
         self._pending_video_id: Optional[str] = None
         self._pending_start_seconds = 0.0
         self._pending_autoplay = False
-        self.setWindowTitle("AnkiTube")
+        self.setWindowTitle("Learn2Rot")
         self._web = AnkiWebView(kind=AnkiWebViewKind.EDITOR)
         self._web.requiresCol = False
         self.setCentralWidget(self._web)
@@ -237,11 +237,11 @@ class FullscreenPlayer(QMainWindow):
         start = self._pending_start_seconds
         autoplay = self._pending_autoplay
         self._web.eval(
-            "window.ankittube.loadVideo("
+            "window.learn2rot.loadVideo("
             f"{json.dumps(video_id)}, {start});"
         )
         if autoplay:
-            self._web.eval("window.ankittube.play();")
+            self._web.eval("window.learn2rot.play();")
 
     def closeEvent(self, event) -> None:
         if self._closing:

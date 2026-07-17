@@ -1,10 +1,10 @@
-# AnkiTube
+# Learn2Rot
 
 Earn media watch time by reviewing flashcards!
 
 Accrued time appears as cubes that fall over the Anki window and pile above the review bottom bar. Each answered card adds one cube worth your configured seconds. As you spend watch time, cubes disappear (not necessarily oldest-first).
 
-By default on macOS and Windows, **Anki Media Timer** pauses system media when your budget runs out and keeps re-pausing while you are out of time (optionally even after Anki quits). Play and Pause live under **Tools → AnkiTube** and the `P` hotkey. An embedded YouTube queue/player remains available as a legacy option in Settings.
+By default on macOS and Windows, **Anki Media Timer** pauses system media when your budget runs out and keeps re-pausing while you are out of time (optionally even after Anki quits). Play and Pause live under **Tools → Learn2Rot** and the `P` hotkey. An embedded YouTube queue/player remains available as a legacy option in Settings.
 
 ## Requirements
 
@@ -14,7 +14,7 @@ By default on macOS and Windows, **Anki Media Timer** pauses system media when y
 
 ## Settings
 
-Open **Tools → AnkiTube → Settings...**
+Open **Tools → Learn2Rot → Settings...**
 
 - **Seconds per card / cube** — watch time and cube size per answered card
 - **Maximum watch budget** — upper limit on banked seconds
@@ -24,7 +24,7 @@ Open **Tools → AnkiTube → Settings...**
 - **Use embedded YouTube player (legacy)** — restore the in-dock queue/player
 - **Show dock in review only** — for legacy player dock visibility
 - **Dock side** — left or right (legacy player)
-- **Debug logging** — write diagnostic events to `ankittube.log`
+- **Debug logging** — write diagnostic events to `learn2rot.log`
 
 ## Potential Annoyances
 
@@ -36,4 +36,4 @@ Open **Tools → AnkiTube → Settings...**
 
 ## Support
 
-Please report issues and request features on GitHub: https://github.com/bl-ake/AnkiTube/issues
+Please report issues and request features on GitHub: https://github.com/bl-ake/Learn2Rot/issues

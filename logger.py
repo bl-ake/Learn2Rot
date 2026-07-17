@@ -1,7 +1,7 @@
 # Copyright (C) 2026 bl-ake
 # SPDX-License-Identifier: AGPL-3.0-or-later
 
-"""Optional debug file logging for AnkiTube."""
+"""Optional debug file logging for Learn2Rot."""
 
 from __future__ import annotations
 
@@ -31,7 +31,7 @@ def log_path() -> str:
         folder = mw.pm.profileFolder()
     except Exception:
         folder = os.path.expanduser("~")
-    return os.path.join(folder, "ankittube.log")
+    return os.path.join(folder, "learn2rot.log")
 
 
 def log(message: str) -> None:

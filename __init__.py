@@ -1,7 +1,7 @@
 # Copyright (C) 2026 bl-ake
 # SPDX-License-Identifier: AGPL-3.0-or-later
 
-"""AnkiTube add-on entry point."""
+"""Learn2Rot add-on entry point."""
 
 from __future__ import annotations
 
@@ -29,7 +29,7 @@ def initialize_addon() -> None:
 
     set_addon_module(ADDON_MODULE)
     hooks.set_addon_module(ADDON_MODULE)
-    log("AnkiTube add-on loaded")
+    log("Learn2Rot add-on loaded")
     hooks.register_hooks()
 
 

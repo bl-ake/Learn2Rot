@@ -66,7 +66,7 @@ def test_drain_one_second() -> None:
 
 def test_update_state_credits_roundtrip(tmp_path) -> None:
     ws = load_addon_module("watch_state", "watch_state.py")
-    path = tmp_path / "ankitube_watch_state.json"
+    path = tmp_path / "learn2rot_watch_state.json"
     ws.write_state(path, {"budget_seconds": 10, "credits": 0})
 
     def add_credit(state: dict) -> None:
@@ -90,7 +90,7 @@ def test_update_state_credits_roundtrip(tmp_path) -> None:
 
 def test_write_exit_sentinel(tmp_path) -> None:
     ws = load_addon_module("watch_state", "watch_state.py")
-    path = tmp_path / "ankitube_watch_state.json"
+    path = tmp_path / "learn2rot_watch_state.json"
     ws.write_exit(path)
     state = ws.read_state(path)
     assert state["exit"] is True

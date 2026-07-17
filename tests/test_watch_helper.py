@@ -49,7 +49,7 @@ class _FakeMedia:
 
 
 def test_engine_drains_while_playing(tmp_path) -> None:
-    path = tmp_path / "ankitube_watch_state.json"
+    path = tmp_path / "learn2rot_watch_state.json"
     ws.write_state(
         path,
         {
@@ -70,7 +70,7 @@ def test_engine_drains_while_playing(tmp_path) -> None:
 
 
 def test_engine_pauses_when_budget_empty(tmp_path) -> None:
-    path = tmp_path / "ankitube_watch_state.json"
+    path = tmp_path / "learn2rot_watch_state.json"
     ws.write_state(
         path,
         {
@@ -89,7 +89,7 @@ def test_engine_pauses_when_budget_empty(tmp_path) -> None:
 
 
 def test_engine_quit_on_exit_sentinel(tmp_path) -> None:
-    path = tmp_path / "ankitube_watch_state.json"
+    path = tmp_path / "learn2rot_watch_state.json"
     ws.write_exit(path)
     engine = watch_helper.MediaTimerEngine(path, media=_FakeMedia())
     should_quit, _label, _show = engine.tick()

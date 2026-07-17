@@ -15,7 +15,7 @@ from addon_loader import load_addon_module
 
 def test_budget_clamps_to_max(mock_mw) -> None:
     budget_mod = load_addon_module("budget", "budget.py")
-    budget = budget_mod.BudgetManager("AnkiTube")
+    budget = budget_mod.BudgetManager("Learn2Rot")
     budget.load()
     budget.seconds = 9999
     assert budget.seconds == 600
@@ -23,7 +23,7 @@ def test_budget_clamps_to_max(mock_mw) -> None:
 
 def test_budget_add_and_subtract(mock_mw) -> None:
     budget_mod = load_addon_module("budget", "budget.py")
-    budget = budget_mod.BudgetManager("AnkiTube")
+    budget = budget_mod.BudgetManager("Learn2Rot")
     budget.load()
     budget.add_seconds(30)
     assert budget.seconds == 30
@@ -33,7 +33,7 @@ def test_budget_add_and_subtract(mock_mw) -> None:
 
 def test_budget_consume_second(mock_mw) -> None:
     budget_mod = load_addon_module("budget", "budget.py")
-    budget = budget_mod.BudgetManager("AnkiTube")
+    budget = budget_mod.BudgetManager("Learn2Rot")
     budget.load()
     budget.seconds = 1
     assert budget.consume_second() is True

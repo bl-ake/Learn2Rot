@@ -1,10 +1,10 @@
-# AnkiTube
+# Learn2Rot
 
-[![CI](https://github.com/bl-ake/AnkiTube/actions/workflows/ci.yml/badge.svg)](https://github.com/bl-ake/AnkiTube/actions/workflows/ci.yml)
+[![CI](https://github.com/bl-ake/Learn2Rot/actions/workflows/ci.yml/badge.svg)](https://github.com/bl-ake/Learn2Rot/actions/workflows/ci.yml)
 
 Make your brainrot work for YOU!
 
-An Anki add-on that meters watch time you've earned by reviewing cards. Playing media will use up your time, and when it runs out, it'll auto-pause until you do more flashcards. Works for Youtube, TikTok, Spotify, and anything else that you can play/pause with the button on your keyboard. There's also cute little squares that pile up to show you your accrued time but you can turn those off if you want.
+This is an Anki add-on that meters watch time you've earned by reviewing cards. Playing media will use up your time, and when it runs out, it'll auto-pause until you do more flashcards. Works for Youtube, TikTok, Spotify, and anything else that you can play/pause with the button on your keyboard. There's also cute little squares that pile up to show you your accrued time but you can turn those off if you want, there's lots of options you can set!
 
 The old version of this add-on embeds a YouTube player in an Anki panel, which is still available in the add-on's settings but I'm probably gonna remove it since Firefox already lets you have a floating player. 
 
@@ -18,8 +18,8 @@ The old version of this add-on embeds a YouTube player in an Anki panel, which i
 
 ### From GitHub Releases
 
-1. Open the [Releases](https://github.com/bl-ake/AnkiTube/releases) page
-2. Download the latest `AnkiTube.ankiaddon` asset
+1. Open the [Releases](https://github.com/bl-ake/Learn2Rot/releases) page
+2. Download the latest `Learn2Rot.ankiaddon` asset
 3. Double-click the file or use **Tools → Add-ons → Install from file…**
 4. Restart Anki if prompted
 
@@ -36,7 +36,7 @@ Install through Anki’s add-on manager with the add-on code, or install a downl
    - **Linux:** `~/.local/share/Anki2/addons21/`
 3. Restart Anki
 
-The folder name can be anything, but `AnkiTube` keeps things simple.
+The folder name can be anything, but `Learn2Rot` keeps things simple.
 
 For local packaging without bumping the AnkiWeb `mod` timestamp:
 
@@ -49,13 +49,13 @@ python package.py --no-update-mod
 1. Review cards — each answer drops a cube worth **seconds per card** of watch time
 2. Cubes fall and collect above Anki’s review bottom bar (drag them around if you like)
 3. Play media (macOS Now Playing / Windows SMTC); budget drains while playing and cubes disappear
-4. When time runs out, AnkiTube pauses system media and keeps re-pausing while you’re out of time
+4. When time runs out, Learn2Rot pauses system media and keeps re-pausing while you’re out of time
 
 A small **Watch:** timer in the review overlay (top-left) shows time remaining. On macOS and Windows, the same countdown appears in the menu bar (macOS) or system tray (Windows) by default via **Anki Media Timer**, a background helper that also owns budget drain and pause enforcement (toggle the icon in Settings). Optionally keep it running after Anki quits (**Quit with Anki** off) so media stays locked out until you earn more time.
 
 ## Debug logging
 
-Enable **Debug logging** in settings, then check **Tools → AnkiTube → View Debug Log**. The log file lives in your Anki profile folder as `ankittube.log`.
+Enable **Debug logging** in settings, then check **Tools → Learn2Rot → View Debug Log**. The log file lives in your Anki profile folder as `learn2rot.log`.
 
 ## Contributing
 

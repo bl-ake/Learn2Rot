@@ -2,12 +2,12 @@
 # Copyright (C) 2026 bl-ake
 # SPDX-License-Identifier: AGPL-3.0-or-later
 
-"""Build an AnkiWeb-ready .ankiaddon package for AnkiTube.
+"""Build an AnkiWeb-ready .ankiaddon package for Learn2Rot.
 
 See https://addon-docs.ankiweb.net/sharing.html
 
 Usage:
-    python package.py              # write dist/AnkiTube.ankiaddon
+    python package.py              # write dist/Learn2Rot.ankiaddon
     python package.py --check      # verify package contents without writing
 """
 
@@ -74,7 +74,7 @@ EXCLUDE_SUFFIXES = frozenset({".pyc", ".pyo", ".ankiaddon"})
 
 
 def _load_version() -> str:
-    spec = importlib.util.spec_from_file_location("ankitube_version", VERSION_PATH)
+    spec = importlib.util.spec_from_file_location("learn2rot_version", VERSION_PATH)
     if spec is None or spec.loader is None:
         raise SystemExit(f"Could not load version from {VERSION_PATH}")
     module = importlib.util.module_from_spec(spec)
@@ -178,8 +178,8 @@ def main(argv: list[str] | None = None) -> int:
         "-o",
         "--output",
         type=Path,
-        default=OUTPUT_DIR / "AnkiTube.ankiaddon",
-        help=f"output .ankiaddon path (default: {OUTPUT_DIR / 'AnkiTube.ankiaddon'})",
+        default=OUTPUT_DIR / "Learn2Rot.ankiaddon",
+        help=f"output .ankiaddon path (default: {OUTPUT_DIR / 'Learn2Rot.ankiaddon'})",
     )
     args = parser.parse_args(argv)
 

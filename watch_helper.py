@@ -8,7 +8,7 @@ Must run outside Anki's Qt process (menubar/tray hosts differ by OS).
 Owns the watch-time clock while running; Anki only earns/undos via the state file.
 
 Usage:
-    python watch_helper.py --state /path/to/ankitube_watch_state.json
+    python watch_helper.py --state /path/to/learn2rot_watch_state.json
 """
 
 from __future__ import annotations
@@ -319,7 +319,7 @@ class _WindowsShell:
             self._engine.write_exit()
             return
         self._apply_icon(label=label, visible=show_icon, force=True)
-        ticker = threading.Thread(target=self._tick_loop, name="ankitube-tick", daemon=True)
+        ticker = threading.Thread(target=self._tick_loop, name="learn2rot-tick", daemon=True)
         ticker.start()
         self._icon.run()
         self._stop.set()

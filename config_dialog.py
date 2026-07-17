@@ -1,7 +1,7 @@
 # Copyright (C) 2026 bl-ake
 # SPDX-License-Identifier: AGPL-3.0-or-later
 
-"""AnkiTube settings dialog."""
+"""Learn2Rot settings dialog."""
 
 from __future__ import annotations
 
@@ -42,7 +42,7 @@ class ConfigDialog(QDialog):
         super().__init__(parent or mw)
         self._addon_module = addon_module
         self._budget = budget
-        self.setWindowTitle("AnkiTube Settings")
+        self.setWindowTitle("Learn2Rot Settings")
 
         config = get_config(addon_module)
 
@@ -149,7 +149,7 @@ class ConfigDialog(QDialog):
         form.addRow("Overlay timer:", self.show_overlay_timer)
 
         self.debug_logging = QCheckBox(
-            "Write events to ankittube.log in your Anki profile folder"
+            "Write events to learn2rot.log in your Anki profile folder"
         )
         self.debug_logging.setChecked(bool(config.get("debug_logging", False)))
         form.addRow("Debug logging:", self.debug_logging)
@@ -212,7 +212,7 @@ class ConfigDialog(QDialog):
         )
         layout.addWidget(
             QLabel(
-                "View the log from Tools → AnkiTube → View Debug Log after enabling debug logging."
+                "View the log from Tools → Learn2Rot → View Debug Log after enabling debug logging."
             )
         )
 
@@ -284,7 +284,7 @@ class ConfigDialog(QDialog):
         )
         self._budget.seconds = self._budget.seconds
         self._budget.save()
-        showInfo("AnkiTube settings saved.")
+        showInfo("Learn2Rot settings saved.")
         self.accept()
 
 
@@ -309,7 +309,7 @@ def _system_media_help_text() -> str:
         return (
             "By default, Anki Media Timer meters and pauses Windows system media "
             "(Spotify, Music, browser tabs that report SMTC, etc.) "
-            "in the background. Play/Pause: Tools → AnkiTube or the P key. "
+            "in the background. Play/Pause: Tools → Learn2Rot or the P key. "
             "Lockout is best-effort for apps that publish to System Media Transport "
             "Controls. Uncheck “Quit with Anki” to keep Anki Media Timer running "
             "after Anki closes."
@@ -317,7 +317,7 @@ def _system_media_help_text() -> str:
     return (
         "By default, Anki Media Timer meters and pauses macOS Now Playing media "
         "(Spotify, Music, browser tabs that report Now Playing, etc.) "
-        "in the background. Play/Pause: Tools → AnkiTube or the P key. "
+        "in the background. Play/Pause: Tools → Learn2Rot or the P key. "
         "Lockout is best-effort for apps that publish to Now Playing. "
         "Uncheck “Quit with Anki” to keep Anki Media Timer running after Anki closes."
     )

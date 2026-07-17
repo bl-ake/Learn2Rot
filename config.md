@@ -1,10 +1,10 @@
-# AnkiTube configuration
+# Learn2Rot configuration
 
-AnkiTube stores user preferences and runtime session state in the add-on config JSON.
+Learn2Rot stores user preferences and runtime session state in the add-on config JSON.
 
 ## User preferences
 
-These keys can be changed in **Tools → AnkiTube → Settings...** or edited here:
+These keys can be changed in **Tools → Learn2Rot → Settings...** or edited here:
 
 | Key | Default | Description |
 |-----|---------|-------------|
@@ -25,7 +25,7 @@ These keys can be changed in **Tools → AnkiTube → Settings...** or edited he
 | `dock_show_playback_buttons` | `true` | Show Play/Pause (and legacy Next/Fullscreen) controls |
 | `show_menubar_watch_time` | `true` | Show the Anki Media Timer icon (countdown) in the macOS menu bar or Windows system tray |
 | `quit_with_anki` | `true` | Quit Anki Media Timer when Anki quits (`false` keeps pause enforcement after Anki closes) |
-| `debug_logging` | `false` | Write diagnostic log to `ankittube.log` |
+| `debug_logging` | `false` | Write diagnostic log to `learn2rot.log` |
 
 ## Runtime state (auto-managed)
 

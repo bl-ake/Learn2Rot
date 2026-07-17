@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AnkiTube Player</title>
+    <title>Learn2Rot Player</title>
     <style>
         html, body {
             margin: 0;
@@ -48,7 +48,7 @@
     <div id="placeholder">Add a YouTube video to the queue to begin.</div>
     <div id="player"></div>
     <script>
-        const CMD_PREFIX = "ankittube:";
+        const CMD_PREFIX = "learn2rot:";
         let player = null;
         let currentVideoId = null;
         let pendingPlay = false;
@@ -224,7 +224,7 @@
             showPlaceholder("Could not play this video.");
         }
 
-        window.ankittube = {
+        window.learn2rot = {
             loadVideo(videoId, startSeconds) {
                 pendingPlay = false;
                 pendingSeekSeconds = startSeconds || 0;

@@ -15,7 +15,7 @@ from addon_loader import load_addon_module
 
 def test_get_config_merges_defaults(mock_mw) -> None:
     config_mod = load_addon_module("config", "config.py")
-    config = config_mod.get_config("AnkiTube")
+    config = config_mod.get_config("Learn2Rot")
     assert config["seconds_per_card"] == config_mod.DEFAULTS["seconds_per_card"]
     assert config["config_version"] == config_mod.DEFAULTS["config_version"]
     assert config["media_mode"] == config_mod.MEDIA_MODE_SYSTEM
@@ -32,9 +32,9 @@ def test_get_config_merges_defaults(mock_mw) -> None:
 def test_save_preferences_updates_only_preference_keys(mock_mw) -> None:
     config_mod = load_addon_module("config", "config.py")
     config_mod.save_preferences(
-        "AnkiTube", {"seconds_per_card": 20, "queue": [{"x": 1}]}
+        "Learn2Rot", {"seconds_per_card": 20, "queue": [{"x": 1}]}
     )
-    config = config_mod.get_config("AnkiTube")
+    config = config_mod.get_config("Learn2Rot")
     assert config["seconds_per_card"] == 20
     assert "queue" not in config
 

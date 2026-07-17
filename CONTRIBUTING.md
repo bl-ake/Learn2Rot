@@ -1,13 +1,13 @@
-# Contributing to AnkiTube
+# Contributing to Learn2Rot
 
-Thank you for helping improve AnkiTube!
+Thank you for helping improve Learn2Rot!
 
 ## Before you report a bug
 
 1. Restart Anki completely.
-2. Confirm you are on the latest AnkiTube release (or latest `main` if testing from source).
+2. Confirm you are on the latest Learn2Rot release (or latest `main` if testing from source).
 3. Disable other add-ons temporarily to rule out conflicts.
-4. Enable **Debug logging** in AnkiTube settings and attach relevant lines from `ankittube.log` when possible.
+4. Enable **Debug logging** in Learn2Rot settings and attach relevant lines from `learn2rot.log` when possible.
 
 ## Reporting issues
 
