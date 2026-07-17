@@ -2,7 +2,7 @@
 
 Earn media watch time by reviewing flashcards!
 
-Accrued time appears as cubes that fall over the Anki window, bounce off the flashcard, and pile at the bottom. Each answered card adds one cube worth your configured seconds. As you spend watch time, cubes disappear (not necessarily oldest-first).
+Accrued time appears as cubes that fall over the Anki window and pile above the review bottom bar. Each answered card adds one cube worth your configured seconds. As you spend watch time, cubes disappear (not necessarily oldest-first).
 
 By default on macOS and Windows, **Anki Media Timer** pauses system media when your budget runs out and keeps re-pausing while you are out of time (optionally even after Anki quits). Play and Pause live under **Tools → AnkiTube** and the `P` hotkey. An embedded YouTube queue/player remains available as a legacy option in Settings.
 
@@ -31,7 +31,6 @@ Open **Tools → AnkiTube → Settings...**
 - System lockout only covers apps that publish to macOS Now Playing or Windows SMTC; other audio sources may still play.
 - Enforcement is best-effort (poll and pause), not a hard OS-level block.
 - After Anki quits, lockout continues only when **Quit with Anki** is turned off.
-- Card bounce uses the main card element (`#qa` / `.card`); some templates may not provide a useful collider.
 - Private Now Playing APIs can change with macOS updates; SMTC coverage varies by app on Windows.
 - In legacy YouTube mode, YouTube’s terms of service apply to embedded playback.
 

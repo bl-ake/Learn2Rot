@@ -11,7 +11,7 @@ from typing import TYPE_CHECKING, Optional
 from anki.collection import OpChangesAfterUndo
 
 from aqt import gui_hooks, mw, tr
-from aqt.qt import QAction, QMenu, QTimer
+from aqt.qt import QAction, QMenu
 from aqt.qt import QDesktopServices, QUrl
 from aqt.utils import qconnect, showInfo
 
@@ -197,7 +197,6 @@ def on_answer_card(reviewer, card, ease) -> None:
         return
     get_dock().on_card_answered()
     _sync_overlay(falling=True)
-    QTimer.singleShot(0, get_overlay().refresh_card_colliders)
 
 
 def _is_answer_card_undo(changes: OpChangesAfterUndo) -> bool:
@@ -215,17 +214,11 @@ def on_undo(changes: OpChangesAfterUndo) -> None:
 
 
 def on_show_question(card) -> None:
-    overlay = get_overlay()
-    overlay.set_review_active(True)
-    QTimer.singleShot(0, overlay.refresh_card_colliders)
-    QTimer.singleShot(80, overlay.refresh_card_colliders)
+    get_overlay().set_review_active(True)
 
 
 def on_show_answer(card) -> None:
-    overlay = get_overlay()
-    overlay.set_review_active(True)
-    QTimer.singleShot(0, overlay.refresh_card_colliders)
-    QTimer.singleShot(80, overlay.refresh_card_colliders)
+    get_overlay().set_review_active(True)
 
 
 def on_state_change(new_state, old_state) -> None:

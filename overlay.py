@@ -49,13 +49,7 @@ _DESPAWN_FADE_SEC = 0.35
 _SPIN_MIN = 3.0  # radians / sec (magnitude; sign chosen at random)
 _SPIN_MAX = 10.0
 _SPIN_DAMP = 0.992
-_SLIDE_KICK = 220.0
-_STICK_TIME_SEC = 0.25
-_STICK_SPEED = 40.0
-_MAX_PLATFORM_VIEW_WIDTH = 0.55
-_MAX_COLLIDER_VIEW_AREA = 0.45
-_MAX_COLLIDER_VIEW_HEIGHT = 0.55
-# Temporary: draw card platforms + floor line for layout debugging.
+# Temporary: draw floor line + fill band for layout debugging.
 _DEBUG_DRAW_COLLIDERS = False
 _DEBUG_STATUS_INTERVAL_SEC = 1.0
 # Bottom bar must sit in the lower half; earlier wrong mappings parked the floor near
@@ -67,8 +61,7 @@ _DRAG_MASK_PAD = 4
 # Keep the watch HUD paintable when the cube input mask is active.
 _HUD_MASK_RECT = QRect(0, 0, 240, 48)
 
-# Collision types for Pymunk handlers
-COLLIDER_TYPE = 1
+# Collision type for cube shapes in Pymunk.
 CUBE_TYPE = 2
 # Static segment radius. Too thin + high fall speed ⇒ tunneling through the floor.
 _BOUNDARY_RADIUS = 2.0
@@ -90,58 +83,6 @@ def _log(message: str) -> None:
         pass
 
 
-# Prefer content bounds of #qa — the element itself is often viewport-sized.
-_CARD_RECT_JS = """
-(function () {
-  function unionRects(rects) {
-    if (!rects || !rects.length) return null;
-    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-    let any = false;
-    for (const r of rects) {
-      if (!r || r.width < 1 || r.height < 1) continue;
-      any = true;
-      minX = Math.min(minX, r.left);
-      minY = Math.min(minY, r.top);
-      maxX = Math.max(maxX, r.right);
-      maxY = Math.max(maxY, r.bottom);
-    }
-    if (!any) return null;
-    return {x: minX, y: minY, w: maxX - minX, h: maxY - minY};
-  }
-
-  const qa = document.querySelector("#qa") || document.querySelector(".card");
-  if (!qa) return null;
-
-  let box = null;
-  try {
-    const range = document.createRange();
-    range.selectNodeContents(qa);
-    box = unionRects(range.getClientRects());
-  } catch (e) {}
-
-  if (!box) {
-    const kids = qa.children;
-    if (kids && kids.length) {
-      const childRects = [];
-      for (let i = 0; i < kids.length; i++) {
-        childRects.push(kids[i].getBoundingClientRect());
-      }
-      box = unionRects(childRects);
-    }
-  }
-
-  if (!box) {
-    const r = qa.getBoundingClientRect();
-    box = {x: r.left, y: r.top, w: r.width, h: r.height};
-  }
-
-  box.vw = window.innerWidth || 1;
-  box.vh = window.innerHeight || 1;
-  return box;
-})()
-"""
-
-
 def cube_count_for_seconds(seconds: int, chunk_seconds: int) -> int:
     chunk = max(1, int(chunk_seconds))
     return max(0, int(seconds) // chunk)
@@ -157,40 +98,6 @@ def cubes_removed_crossing(old_seconds: int, new_seconds: int, chunk_seconds: in
     return max(0, old_n - new_n)
 
 
-def normalize_card_platform(
-    x: float,
-    y: float,
-    w: float,
-    h: float,
-    *,
-    vw: float,
-    vh: float,
-    cube_size: float = _CUBE_SIZE,
-) -> Optional[tuple[float, float, float, float]]:
-    """Clamp / reject card rects into a bounceable one-way platform, or None."""
-    if w < 2 or h < 2:
-        return None
-    # Spawn-band ceilings trap falling cubes at the top of the window.
-    if y < cube_size * 2:
-        return None
-
-    if vw > 0 and w / vw > _MAX_PLATFORM_VIEW_WIDTH:
-        max_w = vw * _MAX_PLATFORM_VIEW_WIDTH
-        cx = x + w / 2
-        x = cx - max_w / 2
-        w = max_w
-
-    if vw > 0 and vh > 0:
-        area_frac = (w * h) / max(1.0, vw * vh)
-        height_frac = h / vh
-        if area_frac > _MAX_COLLIDER_VIEW_AREA or height_frac > _MAX_COLLIDER_VIEW_HEIGHT:
-            h = max(28.0, min(h * 0.15, vh * 0.18))
-
-    if h < 2 or w < 2:
-        return None
-    return (x, y, w, h)
-
-
 class Cube:
     """Wrapper mapping dynamic attributes to clean property gates on PyMunk Body."""
 
@@ -200,13 +107,11 @@ class Cube:
         shape: pymunk.Poly,
         size: float = _CUBE_SIZE,
         despawn_t: Optional[float] = None,
-        stick_time: float = 0.0,
     ) -> None:
         self.body = body
         self.shape = shape
         self.size = size
         self.despawn_t = despawn_t
-        self.stick_time = stick_time
 
     @property
     def x(self) -> float:
@@ -275,29 +180,6 @@ class Cube:
         return (self.x, self.y, self.size, self.size)
 
 
-def resolve_aabb_penetration(
-    moving: tuple[float, float, float, float],
-    solid: tuple[float, float, float, float],
-) -> Optional[str]:
-    """Kept unmodified for downstream backward compatibility."""
-    cx, cy, cw, ch = moving
-    ox, oy, ow, oh = solid
-    if cx + cw <= ox or ox + ow <= cx or cy + ch <= oy or oy + oh <= cy:
-        return None
-    pen_left = (cx + cw) - ox
-    pen_right = (ox + ow) - cx
-    pen_top = (cy + ch) - oy
-    pen_bottom = (oy + oh) - cy
-    min_pen = min(pen_left, pen_right, pen_top, pen_bottom)
-    if min_pen == pen_top:
-        return "top"
-    if min_pen == pen_bottom:
-        return "bottom"
-    if min_pen == pen_left:
-        return "left"
-    return "right"
-
-
 @dataclass
 class PhysicsWorld:
     width: float = 400.0
@@ -307,7 +189,6 @@ class PhysicsWorld:
     bounds_left_frac: float = 0.0
     bounds_right_frac: float = 1.0
     cubes: list[Cube] = field(default_factory=list)
-    _colliders: list[tuple[float, float, float, float]] = field(default_factory=list, init=False, repr=False)
 
     def __post_init__(self) -> None:
         self.space = pymunk.Space()
@@ -316,16 +197,12 @@ class PhysicsWorld:
         self.space.idle_speed_threshold = _SETTLE_SPEED
 
         self.wall_shapes: list[pymunk.Segment] = []
-        self.platform_shapes: list[pymunk.Segment] = []
         self._drag_cube: Optional[Cube] = None
         self._mouse_body: Optional[pymunk.Body] = None
         self._drag_joint: Optional[pymunk.PivotJoint] = None
         self._drag_target: Optional[tuple[float, float]] = None
 
         self.set_horizontal_bounds(self.bounds_left_frac, self.bounds_right_frac)
-
-        # One-way platforms (Pymunk 7+: set Arbiter.process_collision, do not return bool).
-        self.space.on_collision(COLLIDER_TYPE, CUBE_TYPE, pre_solve=self._platform_pre_solve)
 
     def set_horizontal_bounds(self, left_frac: float, right_frac: float) -> None:
         """Clamp and apply the horizontal band cubes may fill; rebuilds walls."""
@@ -348,21 +225,6 @@ class PhysicsWorld:
         # Keep the cube fully inside the walls (walls sit on the bound edges).
         max_left = max(left, right - size)
         return left, max_left
-
-    @property
-    def colliders(self) -> list[tuple[float, float, float, float]]:
-        return self._colliders
-
-    @colliders.setter
-    def colliders(self, rects: list[tuple[float, float, float, float]]) -> None:
-        self._colliders = list(rects)
-        self.update_colliders()
-
-    def _platform_pre_solve(self, arbiter: pymunk.Arbiter, space: pymunk.Space, data: object) -> None:
-        """Let cubes bounce on platforms only when dropping onto the top surface."""
-        # Y points down; normal from platform → cube points "up" (negative y) for top hits.
-        normal = arbiter.contact_point_set.normal
-        arbiter.process_collision = normal.y < -0.7
 
     def update_boundaries(self) -> None:
         """Construct walls and main floor segment matching the fill bounds."""
@@ -396,28 +258,6 @@ class PhysicsWorld:
 
         self.space.add(left_wall, right_wall, floor_seg)
         self.wall_shapes.extend([left_wall, right_wall, floor_seg])
-
-    def update_colliders(self) -> None:
-        """Parse platform coordinates into static top-edge segments (one-way)."""
-        for shape in list(self.platform_shapes):
-            if shape in self.space.shapes:
-                self.space.remove(shape)
-        self.platform_shapes.clear()
-
-        for ox, oy, ow, oh in self._colliders:
-            # Segment only — a filled poly lets cubes tunnel in while one-way
-            # collisions are ignored, then explode out with a huge impulse.
-            shape = pymunk.Segment(
-                self.space.static_body,
-                (ox, oy),
-                (ox + ow, oy),
-                _BOUNDARY_RADIUS,
-            )
-            shape.collision_type = COLLIDER_TYPE
-            shape.elasticity = _RESTITUTION
-            shape.friction = _FRICTION
-            self.space.add(shape)
-            self.platform_shapes.append(shape)
 
     def alive_cubes(self) -> list[Cube]:
         return [c for c in self.cubes if c.alive and c.despawn_t is None]
@@ -456,7 +296,6 @@ class PhysicsWorld:
             return
         self.end_drag()
         cube.settled = False
-        cube.stick_time = 0.0
         mouse_body = pymunk.Body(body_type=pymunk.Body.KINEMATIC)
         mouse_body.position = (x, y)
         local = cube.body.world_to_local((x, y))
@@ -584,7 +423,6 @@ class PhysicsWorld:
         for cube in self.alive_cubes():
             if cube.settled:
                 cube.settled = False
-                cube.stick_time = 0.0
                 woken += 1
         if woken and _DEBUG_DRAW_COLLIDERS:
             _log(f"physics wake_all n={woken} reason={reason!r} floor={self.effective_floor():.1f}")
@@ -600,7 +438,6 @@ class PhysicsWorld:
             dist = abs((cube.y + cube.size) - floor)
             if dist > cube.size * 1.5:
                 cube.settled = False
-                cube.stick_time = 0.0
                 woken += 1
         if woken and _DEBUG_DRAW_COLLIDERS:
             _log(f"physics wake_off_floor n={woken} reason={reason!r} floor={floor:.1f}")
@@ -626,14 +463,13 @@ class PhysicsWorld:
             for cube in self.alive_cubes():
                 bottom = cube.y + cube.size
                 if bottom < new_floor - cube.size * 0.5:
-                    continue  # mid-air / on a platform above the new floor
+                    continue  # mid-air above the new floor
                 was_settled = cube.settled
                 cube.settled = False
                 cube.y -= lift
                 cube.vx = 0.0
                 cube.vy = 0.0
                 cube.omega = 0.0
-                cube.stick_time = 0.0
                 if was_settled:
                     cube.settled = True
                 moved += 1
@@ -677,13 +513,7 @@ class PhysicsWorld:
                     cube.vy = _MAX_FALL_SPEED
 
         for cube in self.cubes:
-            if cube.despawn_t is not None:
-                continue
-            if cube is self._drag_cube:
-                cube.stick_time = 0.0
-                continue
-            if cube.settled:
-                cube.stick_time = 0.0
+            if cube.despawn_t is not None or cube is self._drag_cube or cube.settled:
                 continue
 
             # Clamp ceiling boundary
@@ -694,45 +524,6 @@ class PhysicsWorld:
             # Spin damp — avoid writing omega≈0 every frame (wakes pymunk idle timer).
             if abs(cube.omega) > 1e-4:
                 cube.omega *= _SPIN_DAMP
-
-            # Sliding platform kick checks
-            on_platform, platform_rect = self._is_on_platform(cube)
-            speed = math.hypot(cube.vx, cube.vy)
-            if on_platform and speed < _STICK_SPEED and abs(cube.vy) < _STICK_SPEED:
-                cube.stick_time += dt
-                if cube.stick_time >= _STICK_TIME_SEC:
-                    self._kick_off_platform(cube, platform_rect)
-                    cube.stick_time = 0.0
-                    if _DEBUG_DRAW_COLLIDERS:
-                        _log(f"cube stick-break kick vx={cube.vx:.1f} y={cube.y:.1f}")
-            else:
-                cube.stick_time = 0.0
-
-    def _is_on_platform(self, cube: Cube) -> tuple[bool, Optional[tuple[float, float, float, float]]]:
-        cx, cy, cw, ch = cube.rect()
-        for platform in self.colliders:
-            ox, oy, ow, oh = platform
-            if cx + cw > ox and ox + ow > cx:
-                if abs((cy + ch) - oy) < 2.5:
-                    return True, platform
-        return False, None
-
-    def _kick_off_platform(
-        self,
-        cube: Cube,
-        platform: Optional[tuple[float, float, float, float]],
-    ) -> None:
-        cx = cube.x + cube.size / 2
-        if platform is None:
-            direction = 1.0 if cx < self.width / 2 else -1.0
-        else:
-            ox, _oy, ow, _oh = platform
-            mid = ox + ow / 2
-            direction = -1.0 if cx <= mid else 1.0
-        cube.settled = False
-        cube.vx = direction * _SLIDE_KICK
-        cube.vy = min(cube.vy, -80.0)
-        cube.omega += direction * 4.0
 
 
 class _ParentResizeFilter(QObject):
@@ -921,16 +712,6 @@ class BudgetOverlay(QWidget):
         self.world.wake_all(reason=reason)
         self._request_repaint()
 
-    def set_colliders(self, rects: Sequence[tuple[float, float, float, float]]) -> None:
-        self.world.colliders = [
-            (float(x), float(y), float(w), float(h)) for x, y, w, h in rects if w > 1 and h > 1
-        ]
-        self._request_repaint()
-
-    def clear_colliders(self) -> None:
-        self.world.colliders = []
-        self._request_repaint()
-
     def hydrate_settled(self, count: int) -> None:
         if self._dragging:
             self.releaseMouse()
@@ -967,20 +748,19 @@ class BudgetOverlay(QWidget):
             if self._debug_status_accum >= _DEBUG_STATUS_INTERVAL_SEC:
                 self._debug_status_accum = 0.0
                 self._log_debug_status()
-        # Keep redrawing while debugging so platforms stay visible with 0 cubes.
+        # Keep redrawing while debugging so the floor line stays visible with 0 cubes.
         if self.world.cubes or _DEBUG_DRAW_COLLIDERS:
             self._request_repaint()
 
     def _log_debug_status(self) -> None:
         alive = self.world.alive_cubes()
-        if not alive and not self.world.colliders:
+        if not alive:
             return
         settled_n = sum(1 for c in alive if c.settled)
         sample = alive[:3]
         parts = [
             f"n={len(alive)} settled={settled_n} "
-            f"floor={self.world.effective_floor():.1f} h={self.world.height:.1f} "
-            f"colliders={len(self.world.colliders)}"
+            f"floor={self.world.effective_floor():.1f} h={self.world.height:.1f}"
         ]
         for i, c in enumerate(sample):
             parts.append(f"c{i}[y={c.y:.0f} vy={c.vy:.0f} settled={c.settled}]")
@@ -997,18 +777,6 @@ class BudgetOverlay(QWidget):
             max(14, int(floor) - 6),
             f"floor y={floor:.0f} h={self.world.height:.0f}",
         )
-
-        # Card / one-way platforms.
-        for i, (x, y, w, h) in enumerate(self.world.colliders):
-            painter.setBrush(QColor(255, 200, 40, 55))
-            painter.setPen(QPen(QColor(255, 160, 0, 230), 2))
-            painter.drawRect(QRectF(x, y, w, h))
-            painter.setPen(QColor(255, 220, 120, 240))
-            painter.drawText(
-                QRectF(x + 4, y + 2, max(40.0, w - 8), 16),
-                int(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop),
-                f"c{i} {w:.0f}x{h:.0f} @({x:.0f},{y:.0f})",
-            )
 
         # Spawn / fill band hint.
         left_x = self.world.width * self.world.bounds_left_frac
@@ -1113,9 +881,9 @@ class BudgetOverlayController:
     def __init__(self, addon_module: str) -> None:
         self._addon_module = addon_module
         self._overlay: Optional[BudgetOverlay] = None
-        self._collider_poll = QTimer()
-        self._collider_poll.setInterval(350)
-        self._collider_poll.timeout.connect(self.refresh_card_colliders)
+        self._floor_poll = QTimer()
+        self._floor_poll.setInterval(350)
+        self._floor_poll.timeout.connect(self.refresh_floor)
         self._last_seconds: Optional[int] = None
         self._chunk = 15
         # Pixels from window bottom to the review bottom-bar top; reused on menu screens.
@@ -1163,8 +931,8 @@ class BudgetOverlayController:
         self._overlay.show()
         self.ensure_raised()
         if self.cubes_enabled():
-            if not self._collider_poll.isActive():
-                self._collider_poll.start()
+            if not self._floor_poll.isActive():
+                self._floor_poll.start()
             self.refresh_floor()
             # Re-stack within the (possibly updated) horizontal bounds.
             n = self._overlay.world.cube_count()
@@ -1180,19 +948,17 @@ class BudgetOverlayController:
             _log("overlay timer disabled")
 
     def _clear_cubes_only(self) -> None:
-        self._collider_poll.stop()
+        self._floor_poll.stop()
         if self._overlay is None:
             return
         self._overlay.world.clear()
-        self._overlay.clear_colliders()
         self._overlay._request_repaint()
 
     def _hide_overlay(self) -> None:
-        self._collider_poll.stop()
+        self._floor_poll.stop()
         if self._overlay is None:
             return
         self._overlay.world.clear()
-        self._overlay.clear_colliders()
         self._overlay.hide()
         self._overlay._request_repaint()
 
@@ -1209,13 +975,13 @@ class BudgetOverlayController:
         if not self.overlay_enabled():
             self._overlay.hide()
         elif self.cubes_enabled():
-            if not self._collider_poll.isActive():
-                self._collider_poll.start()
+            if not self._floor_poll.isActive():
+                self._floor_poll.start()
             self.refresh_floor()
         _log("budget overlay started")
 
     def shutdown(self) -> None:
-        self._collider_poll.stop()
+        self._floor_poll.stop()
         if self._overlay is not None:
             self._overlay.shutdown()
             self._overlay = None
@@ -1240,17 +1006,11 @@ class BudgetOverlayController:
             self.ensure_raised()
             return
         # Keep the floor poll running on menu screens so cubes stay above Anki chrome.
-        if not self._collider_poll.isActive():
-            self._collider_poll.start()
-        if active:
-            QTimer.singleShot(0, self.refresh_card_colliders)
-            QTimer.singleShot(50, self.refresh_card_colliders)
-        else:
-            if self._overlay is not None:
-                self._overlay.clear_colliders()
-            self.refresh_floor()
-            if self._overlay is not None:
-                self._overlay.wake_all_cubes(reason="leave_review")
+        if not self._floor_poll.isActive():
+            self._floor_poll.start()
+        self.refresh_floor()
+        if not active and self._overlay is not None:
+            self._overlay.wake_all_cubes(reason="leave_review")
         self.ensure_raised()
 
     def hydrate_from_budget(self, seconds: int, chunk_seconds: int, max_budget_seconds: int) -> None:
@@ -1345,58 +1105,3 @@ class BudgetOverlayController:
             # Typical Anki review bottom-bar height when we have never measured.
             inset = 64.0
         self._overlay.set_floor_y(height - inset)
-
-    def refresh_card_colliders(self) -> None:
-        if self._overlay is None or not self.cubes_enabled():
-            return
-        self.refresh_floor()
-        if mw.state != "review":
-            self._overlay.clear_colliders()
-            return
-        reviewer = getattr(mw, "reviewer", None)
-        web = getattr(reviewer, "web", None) if reviewer is not None else None
-        if web is None:
-            self._overlay.clear_colliders()
-            return
-
-        def on_result(result: object) -> None:
-            if self._overlay is None or not self.cubes_enabled():
-                return
-            if not isinstance(result, dict):
-                self._overlay.clear_colliders()
-                return
-            try:
-                x = float(result.get("x", 0))
-                y = float(result.get("y", 0))
-                w = float(result.get("w", 0))
-                h = float(result.get("h", 0))
-                vw = float(result.get("vw", 0) or 0)
-                vh = float(result.get("vh", 0) or 0)
-            except (TypeError, ValueError, AttributeError):
-                self._overlay.clear_colliders()
-                return
-            try:
-                origin = self._overlay.mapFromGlobal(web.mapToGlobal(QPoint(0, 0)))
-            except Exception:
-                self._overlay.clear_colliders()
-                return
-            platform = normalize_card_platform(
-                origin.x() + x,
-                origin.y() + y,
-                w,
-                h,
-                vw=vw if vw > 0 else float(web.width()),
-                vh=vh if vh > 0 else float(web.height()),
-            )
-            if platform is None:
-                _log("card collider rejected (spawn-band or empty)")
-                self._overlay.clear_colliders()
-                return
-            self._overlay.set_colliders([platform])
-            self.ensure_raised()
-
-        try:
-            web.evalWithCallback(_CARD_RECT_JS, on_result)
-        except Exception as exc:
-            _log(f"card collider query failed: {exc}")
-            self._overlay.clear_colliders()

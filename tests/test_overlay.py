@@ -37,32 +37,6 @@ def test_cubes_removed_crossing() -> None:
     assert overlay.cubes_removed_crossing(10, 20, 15) == 0
 
 
-def test_resolve_aabb_penetration_top() -> None:
-    overlay = load_addon_module("overlay", "overlay.py")
-    side = overlay.resolve_aabb_penetration(
-        (10, 40, 20, 20),
-        (0, 50, 100, 80),
-    )
-    assert side == "top"
-
-
-def test_normalize_rejects_spawn_band() -> None:
-    overlay = load_addon_module("overlay", "overlay.py")
-    assert (
-        overlay.normalize_card_platform(0, 10, 200, 40, vw=400, vh=600) is None
-    )
-
-
-def test_normalize_clamps_wide_platform() -> None:
-    overlay = load_addon_module("overlay", "overlay.py")
-    platform = overlay.normalize_card_platform(
-        0, 100, 400, 40, vw=400, vh=600
-    )
-    assert platform is not None
-    _x, _y, w, _h = platform
-    assert w <= 400 * overlay._MAX_PLATFORM_VIEW_WIDTH + 0.1
-
-
 def test_physics_world_spawn_and_despawn() -> None:
     overlay = load_addon_module("overlay", "overlay.py")
     world = overlay.PhysicsWorld(width=200, height=300)
@@ -109,25 +83,6 @@ def test_spawn_falling_stays_within_bounds() -> None:
     world.spawn_settled_pile(8)
     for cube in world.alive_cubes():
         assert x_min <= cube.x <= x_max + 1.0
-
-
-def test_one_way_platform_does_not_trap_at_top() -> None:
-    overlay = load_addon_module("overlay", "overlay.py")
-    world = overlay.PhysicsWorld(width=400, height=600, floor_y=600)
-    # Wide thin platform near mid-upper area
-    world.colliders = [(50, 120, 300, 30)]
-    cube = world.spawn_falling()
-    cube.x = 180
-    cube.y = 80
-    cube.vx = 0
-    cube.vy = 200
-    for _ in range(300):
-        world.step()
-    alive = world.alive_cubes()
-    assert alive
-    # Must reach the floor rather than remaining stuck on the platform forever.
-    assert alive[0].settled is True
-    assert alive[0].y + alive[0].size >= world.floor_y - 2
 
 
 def test_wake_cubes_not_on_floor() -> None:

@@ -197,8 +197,8 @@ class ConfigDialog(QDialog):
         layout.addWidget(
             QLabel(
                 "When enabled, budget is shown as cubes that fall over the Anki window "
-                "(one cube per “seconds per card”). They bounce off the card "
-                "and pile at the bottom; cubes disappear as watch time is spent. "
+                "(one cube per “seconds per card”). They pile above the review bottom "
+                "bar; cubes disappear as watch time is spent. "
                 "Left/Right bounds are percentages of the window width — cubes drop "
                 "randomly between them. Uncheck Budget cubes to hide them completely."
             )
