@@ -4,7 +4,7 @@
 
 Make your brainrot work for YOU!
 
-This is an Anki add-on that meters watch time you've earned by reviewing cards. Playing media will use up your time, and when it runs out, it'll auto-pause until you do more flashcards. Works for Youtube, TikTok, Spotify, and anything else that you can play/pause with the button on your keyboard. There's also cute little squares that pile up to show you your accrued time but you can turn those off if you want, there's lots of options you can set!
+This is an Anki add-on that lets you earn screen time by doing your flashcards, every answer gives you a couple precious seconds. Playing media will use up your time, and when it runs out, it'll auto-pause until you do more flashcards. Works for Youtube, TikTok, Spotify, and anything else that you can play/pause with the button on your keyboard. There's also cute little squares that pile up to show you your accrued time but you can turn those off if you want, there's lots of options you can set!
 
 The old version of this add-on embeds a YouTube player in an Anki panel, which is still available in the add-on's settings but I'm probably gonna remove it since Firefox already lets you have a floating player. 
 
