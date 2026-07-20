@@ -46,7 +46,7 @@ python package.py --no-update-mod
 
 ## Usage
 
-1. Review cards — each answer drops a cube worth **seconds per card** of watch time
+1. Review cards — each answer drops a cube worth **seconds per card** of watch time (including cards reviewed on AnkiMobile / other devices after you sync)
 2. Cubes fall and collect above Anki’s review bottom bar (drag them around if you like)
 3. Play media (macOS Now Playing / Windows SMTC); budget drains while playing and cubes disappear
 4. When time runs out, Learn2Rot pauses system media and keeps re-pausing while you’re out of time

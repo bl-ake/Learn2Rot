@@ -780,21 +780,28 @@ class Learn2RotDock(QDockWidget):
         self._update_budget_ui()
 
     def on_card_answered(self) -> None:
+        self.on_cards_answered(1, track_undo=True)
+
+    def on_cards_answered(self, count: int, *, track_undo: bool = True) -> None:
+        if count <= 0:
+            return
         had_time = self._budget.has_time()
-        reward = self._persistence.seconds_per_card()
-        self._budget.add_seconds(reward)
-        self._reward_history.append(reward)
-        self._lifetime_earned_seconds += reward
+        reward_each = self._persistence.seconds_per_card()
+        total = reward_each * count
+        self._budget.add_seconds(total)
+        if track_undo:
+            self._reward_history.extend([reward_each] * count)
+        self._lifetime_earned_seconds += total
         self._budget.save()
         self._refresh_queue_ui()
         self._save_state()
         log(
-            f"card answered: +{reward}s "
+            f"cards answered: count={count} +{total}s "
             f"(history={self._reward_history}, earned={self._lifetime_earned_seconds})"
         )
         if self._is_system_mode():
             # Daemon owns drain/auto-resume; push the earned seconds.
-            watch_daemon.credit_watch_time(reward)
+            watch_daemon.credit_watch_time(total)
             _ = had_time
         else:
             watch_daemon.publish_budget(self._budget.seconds)

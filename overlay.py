@@ -238,21 +238,15 @@ class PhysicsWorld:
         left_x = self.width * self.bounds_left_frac
         right_x = self.width * self.bounds_right_frac
 
-        left_wall = pymunk.Segment(
-            self.space.static_body, (left_x, -_CUBE_SIZE * 2), (left_x, floor), r
-        )
+        left_wall = pymunk.Segment(self.space.static_body, (left_x, -_CUBE_SIZE * 2), (left_x, floor), r)
         left_wall.elasticity = _RESTITUTION
         left_wall.friction = _FRICTION
 
-        right_wall = pymunk.Segment(
-            self.space.static_body, (right_x, -_CUBE_SIZE * 2), (right_x, floor), r
-        )
+        right_wall = pymunk.Segment(self.space.static_body, (right_x, -_CUBE_SIZE * 2), (right_x, floor), r)
         right_wall.elasticity = _RESTITUTION
         right_wall.friction = _FRICTION
 
-        floor_seg = pymunk.Segment(
-            self.space.static_body, (left_x, floor), (right_x, floor), r
-        )
+        floor_seg = pymunk.Segment(self.space.static_body, (left_x, floor), (right_x, floor), r)
         floor_seg.elasticity = _RESTITUTION
         floor_seg.friction = _FRICTION
 
@@ -339,7 +333,7 @@ class PhysicsWorld:
         cx = x + size / 2
         cy = -size / 2 - random.uniform(0, _SPAWN_JITTER)
 
-        mass = 1.0
+        mass = 10.0
         moment = pymunk.moment_for_box(mass, (size, size))
         body = pymunk.Body(mass, moment)
         body.position = (cx, cy)
@@ -474,10 +468,7 @@ class PhysicsWorld:
                     cube.settled = True
                 moved += 1
             if moved and _DEBUG_DRAW_COLLIDERS:
-                _log(
-                    f"physics rehome_lift n={moved} reason={reason!r} "
-                    f"floor={old_floor:.1f}->{new_floor:.1f}"
-                )
+                _log(f"physics rehome_lift n={moved} reason={reason!r} floor={old_floor:.1f}->{new_floor:.1f}")
             return moved
 
         # Floor dropped: let cubes that are no longer supported fall.
@@ -691,9 +682,7 @@ class BudgetOverlay(QWidget):
         self.world.floor_y = new_floor
         self.world.update_boundaries()
         if abs(new_floor - old_floor) >= _FLOOR_CHANGE_WAKE_PX:
-            self.world.rehome_for_floor_change(
-                old_floor, reason=f"floor {old_floor:.1f}->{new_floor:.1f}"
-            )
+            self.world.rehome_for_floor_change(old_floor, reason=f"floor {old_floor:.1f}->{new_floor:.1f}")
             if _DEBUG_DRAW_COLLIDERS:
                 _log(f"floor set {old_floor:.1f} -> {new_floor:.1f} (h={self.world.height:.1f})")
         self._request_repaint()
@@ -758,10 +747,7 @@ class BudgetOverlay(QWidget):
             return
         settled_n = sum(1 for c in alive if c.settled)
         sample = alive[:3]
-        parts = [
-            f"n={len(alive)} settled={settled_n} "
-            f"floor={self.world.effective_floor():.1f} h={self.world.height:.1f}"
-        ]
+        parts = [f"n={len(alive)} settled={settled_n} floor={self.world.effective_floor():.1f} h={self.world.height:.1f}"]
         for i, c in enumerate(sample):
             parts.append(f"c{i}[y={c.y:.0f} vy={c.vy:.0f} settled={c.settled}]")
         _log("overlay status " + " ".join(parts))
@@ -1083,10 +1069,7 @@ class BudgetOverlayController:
         height = self._overlay.world.height
         if floor_y < 40 or floor_y > height or floor_y < height * _MIN_FLOOR_HEIGHT_FRACTION:
             if _DEBUG_DRAW_COLLIDERS:
-                _log(
-                    f"floor rejected y={floor_y:.1f} h={height:.1f} "
-                    f"(need >= {height * _MIN_FLOOR_HEIGHT_FRACTION:.1f})"
-                )
+                _log(f"floor rejected y={floor_y:.1f} h={height:.1f} (need >= {height * _MIN_FLOOR_HEIGHT_FRACTION:.1f})")
             return None
         return floor_y
 

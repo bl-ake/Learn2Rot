@@ -13,13 +13,14 @@ from anki.collection import OpChangesAfterUndo
 from aqt import gui_hooks, mw, tr
 from aqt.qt import QAction, QMenu
 from aqt.qt import QDesktopServices, QUrl
-from aqt.utils import qconnect, showInfo
+from aqt.utils import qconnect, showInfo, tooltip
 
 from . import watch_daemon
 from .config import get_config, is_system_media_mode
 from .config_dialog import ConfigDialog
-from .logger import clear_log, log, log_path
-from .utils import local_file_uri
+from .logger import clear_log, log, log_exception, log_path
+from .sync_credit import count_new_answer_reviews
+from .utils import format_seconds, local_file_uri
 
 if TYPE_CHECKING:
     from .budget import BudgetManager
@@ -31,6 +32,7 @@ _budget: Optional["BudgetManager"] = None
 _overlay: Optional["BudgetOverlayController"] = None
 _addon_module: str = ""
 _syncing_from_daemon = False
+_pre_sync_revlog_ids: Optional[set[int]] = None
 
 
 def set_addon_module(module: str) -> None:
@@ -179,7 +181,7 @@ def on_profile_open() -> None:
 
 
 def on_profile_close() -> None:
-    global _dock, _budget, _overlay
+    global _dock, _budget, _overlay, _pre_sync_revlog_ids
     quit_helper = bool(get_config(_addon_module).get("quit_with_anki", True))
     watch_daemon.shutdown_watch_daemon(quit_helper=quit_helper)
     if _overlay is not None:
@@ -190,6 +192,52 @@ def on_profile_close() -> None:
         _dock.deleteLater()
         _dock = None
     _budget = None
+    _pre_sync_revlog_ids = None
+
+
+def on_sync_will_start() -> None:
+    """Snapshot revlog ids so post-sync we can credit phone/other-device reviews."""
+    global _pre_sync_revlog_ids
+    _pre_sync_revlog_ids = None
+    try:
+        col = mw.col
+        if col is None:
+            return
+        _pre_sync_revlog_ids = set(col.db.list("SELECT id FROM revlog"))
+        log(f"sync will start: snapshot {len(_pre_sync_revlog_ids)} revlog ids")
+    except Exception:
+        _pre_sync_revlog_ids = None
+        log_exception("sync will start: failed to snapshot revlog ids")
+
+
+def on_sync_did_finish() -> None:
+    """Award watch time for answer reviews that arrived during sync."""
+    global _pre_sync_revlog_ids
+    previous_ids = _pre_sync_revlog_ids
+    _pre_sync_revlog_ids = None
+    if previous_ids is None:
+        return
+    try:
+        col = mw.col
+        if col is None:
+            return
+        rows = col.db.all("SELECT id, type, ease, factor FROM revlog")
+        count = count_new_answer_reviews(previous_ids, rows)
+        if count <= 0:
+            log("sync did finish: no new answer reviews to credit")
+            return
+        get_dock().on_cards_answered(count, track_undo=False)
+        _sync_overlay(falling=True)
+        reward_each = _chunk_seconds()
+        total = reward_each * count
+        card_word = "card" if count == 1 else "cards"
+        message = (
+            f"Learn2Rot: +{format_seconds(total)} from {count} synced {card_word}"
+        )
+        log(f"sync did finish: credited {message}")
+        tooltip(message)
+    except Exception:
+        log_exception("sync did finish: failed to credit synced reviews")
 
 
 def on_answer_card(reviewer, card, ease) -> None:
@@ -284,4 +332,6 @@ def register_hooks() -> None:
     gui_hooks.reviewer_did_show_answer.append(on_show_answer)
     gui_hooks.state_did_undo.append(on_undo)
     gui_hooks.state_did_change.append(on_state_change)
+    gui_hooks.sync_will_start.append(on_sync_will_start)
+    gui_hooks.sync_did_finish.append(on_sync_did_finish)
     gui_hooks.main_window_did_init.append(setup_menu)
