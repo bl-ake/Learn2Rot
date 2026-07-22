@@ -88,6 +88,17 @@ def test_start_writes_prefs_and_starts_helper(mock_mw, tmp_path) -> None:
     daemon.shutdown_watch_daemon(quit_helper=True)
 
 
+def test_helper_python_rejects_packaged_anki() -> None:
+    daemon = load_addon_module("watch_daemon", "watch_daemon.py")
+    assert daemon._is_packaged_anki_executable(r"C:\Program Files\Anki\Anki.exe")
+    assert daemon._is_packaged_anki_executable("/Applications/Anki.app/Contents/MacOS/anki")
+    assert not daemon._is_packaged_anki_executable(sys.executable)
+    with patch.object(daemon.sys, "executable", r"C:\Programs\Anki\Anki.exe"):
+        assert daemon._helper_python() is None
+    with patch.object(daemon.sys, "executable", sys.executable):
+        assert daemon._helper_python() == sys.executable
+
+
 def test_supports_watch_daemon_platforms() -> None:
     daemon = load_addon_module("watch_daemon", "watch_daemon.py")
     with patch.object(daemon.platform, "system", return_value="Darwin"):

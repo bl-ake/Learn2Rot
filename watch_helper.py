@@ -367,6 +367,80 @@ def _supported_helper_platform() -> bool:
     return sys.platform in ("darwin", "win32")
 
 
+def _prepare_state_path(state_path: Path) -> Path:
+    state_path = state_path.expanduser()
+    state_path.parent.mkdir(parents=True, exist_ok=True)
+    if not state_path.exists():
+        write_state(state_path, default_state())
+    return state_path
+
+
+_inproc_thread: Optional[threading.Thread] = None
+_inproc_shell: Optional[_WindowsShell] = None
+_inproc_lock = threading.Lock()
+
+
+def windows_helper_inprocess_alive() -> bool:
+    thread = _inproc_thread
+    return thread is not None and thread.is_alive()
+
+
+def start_windows_helper_inprocess(state_path: Path) -> threading.Thread:
+    """Run the Windows tray helper inside Anki's process.
+
+    Packaged Windows Anki uses ``Anki.exe`` as ``sys.executable``, so spawning
+    a subprocess re-launches Anki (single-instance + unsupported file type).
+    pystray can host the tray icon from a background thread instead.
+    """
+    global _inproc_thread, _inproc_shell
+    with _inproc_lock:
+        if windows_helper_inprocess_alive():
+            assert _inproc_thread is not None
+            return _inproc_thread
+        prepared = _prepare_state_path(Path(state_path))
+
+        def target() -> None:
+            global _inproc_shell
+            engine = MediaTimerEngine(prepared)
+            shell = _WindowsShell(engine)
+            _inproc_shell = shell
+            try:
+                shell.run()
+            finally:
+                if _inproc_shell is shell:
+                    _inproc_shell = None
+
+        thread = threading.Thread(
+            target=target,
+            name="learn2rot-watch-helper",
+            daemon=True,
+        )
+        _inproc_thread = thread
+        thread.start()
+        return thread
+
+
+def stop_windows_helper_inprocess(state_path: Path) -> None:
+    """Ask the in-process Windows helper to exit (never kill Anki's PID)."""
+    global _inproc_thread, _inproc_shell
+    write_exit(Path(state_path))
+    shell = _inproc_shell
+    if shell is not None:
+        try:
+            shell._stop.set()
+            shell._icon.stop()
+        except Exception:
+            pass
+    thread = _inproc_thread
+    if thread is not None and thread.is_alive() and thread is not threading.current_thread():
+        thread.join(timeout=2.0)
+    with _inproc_lock:
+        if _inproc_thread is thread:
+            _inproc_thread = None
+        if _inproc_shell is shell:
+            _inproc_shell = None
+
+
 def main() -> None:
     if not _supported_helper_platform():
         raise SystemExit(
@@ -379,10 +453,7 @@ def main() -> None:
         help="Path to JSON state file shared with the Anki add-on",
     )
     args = parser.parse_args()
-    state_path = Path(args.state).expanduser()
-    state_path.parent.mkdir(parents=True, exist_ok=True)
-    if not state_path.exists():
-        write_state(state_path, default_state())
+    state_path = _prepare_state_path(Path(args.state))
     engine = MediaTimerEngine(state_path)
     if sys.platform == "darwin":
         _DarwinShell(engine).run()

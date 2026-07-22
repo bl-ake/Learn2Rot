@@ -517,23 +517,45 @@ class PhysicsWorld:
                 cube.omega *= _SPIN_DAMP
 
 
-class _ParentResizeFilter(QObject):
+class _HostGeometryFilter(QObject):
+    """Keep the overlay tool window aligned when Anki's host widgets move/resize."""
+
     def __init__(self, overlay: "BudgetOverlay") -> None:
         super().__init__(overlay)
         self._overlay = overlay
 
     def eventFilter(self, obj: QObject, event: QEvent) -> bool:
-        if event.type() == QEvent.Type.Resize:
+        etype = event.type()
+        if etype in (
+            QEvent.Type.Resize,
+            QEvent.Type.Move,
+            QEvent.Type.Show,
+            QEvent.Type.WindowStateChange,
+        ):
             self._overlay._sync_geometry()
         return False
 
 
 class BudgetOverlay(QWidget):
+    """Frameless tool window over Anki's central widget.
+
+    Hosted as a native tool window (not an in-process child) so translucent
+    clears work on every platform. Child widgets with WA_TranslucentBackground
+    often lack a real alpha surface on Windows and paint opaque black instead.
+    """
+
     def __init__(self, parent: QWidget) -> None:
-        super().__init__(parent)
+        super().__init__(
+            parent,
+            Qt.WindowType.Tool
+            | Qt.WindowType.FramelessWindowHint
+            | Qt.WindowType.WindowDoesNotAcceptFocus,
+        )
+        self.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating, True)
         # Empty areas stay click-through via setMask; cubes grab input themselves.
         self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
+        self.setAttribute(Qt.WidgetAttribute.WA_NoSystemBackground, True)
         self.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         self.setAutoFillBackground(False)
         self.setMouseTracking(True)
@@ -544,8 +566,9 @@ class BudgetOverlay(QWidget):
         self._show_timer = True
         self._debug_status_accum = 0.0
         self._dragging = False
-        self._parent_filter = _ParentResizeFilter(self)
-        parent.installEventFilter(self._parent_filter)
+        self._host_filter = _HostGeometryFilter(self)
+        self._host_widgets: list[QWidget] = []
+        self._install_host_filters(parent)
 
         self._timer = QTimer(self)
         self._timer.setInterval(int(1000 / _PHYSICS_FPS))
@@ -557,15 +580,30 @@ class BudgetOverlay(QWidget):
         self._timer.start()
         self._request_repaint()
 
+    def _install_host_filters(self, host: QWidget) -> None:
+        targets = [host]
+        top = host.window()
+        if top is not None and top is not host:
+            targets.append(top)
+        for widget in targets:
+            widget.installEventFilter(self._host_filter)
+            self._host_widgets.append(widget)
+
+    def _remove_host_filters(self) -> None:
+        for widget in self._host_widgets:
+            try:
+                widget.removeEventFilter(self._host_filter)
+            except RuntimeError:
+                pass
+        self._host_widgets.clear()
+
     def shutdown(self) -> None:
         if self._dragging:
             self.releaseMouse()
             self._dragging = False
         self.world.end_drag()
         self._timer.stop()
-        parent = self.parentWidget()
-        if parent is not None:
-            parent.removeEventFilter(self._parent_filter)
+        self._remove_host_filters()
         self.hide()
         self.deleteLater()
 
@@ -581,7 +619,9 @@ class BudgetOverlay(QWidget):
         parent = self.parentWidget()
         if parent is None:
             return
-        self.setGeometry(parent.rect())
+        # Tool window geometry is in global coordinates.
+        top_left = parent.mapToGlobal(QPoint(0, 0))
+        self.setGeometry(QRect(top_left, parent.size()))
         self.world.width = float(max(1, self.width()))
         self.world.height = float(max(1, self.height()))
         if self.world.floor_y <= 0 or self.world.floor_y > self.world.height:
@@ -596,7 +636,7 @@ class BudgetOverlay(QWidget):
         return event.pos()
 
     def _request_repaint(self) -> None:
-        """Repaint the full overlay; reapply the mouse mask after painting.
+        """Repaint the overlay; reapply the mouse mask after painting.
 
         setMask() clips both hits and paints. If the mask moves with cubes,
         old pixels outside the new mask are never erased — motion trails.
@@ -628,9 +668,12 @@ class BudgetOverlay(QWidget):
             )
 
         if region.isEmpty():
-            self.clearMask()
-            self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
-            return
+            if self._show_timer:
+                region = QRegion(_HUD_MASK_RECT)
+            else:
+                self.clearMask()
+                self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
+                return
 
         if self._show_timer:
             region = region.united(QRegion(_HUD_MASK_RECT))
@@ -791,7 +834,7 @@ class BudgetOverlay(QWidget):
     def paintEvent(self, event: QPaintEvent) -> None:  # noqa: N802
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
-        # Translucent widgets don't auto-erase; wipe the dirty rect or frames smear.
+        # Translucent tool windows don't auto-erase; wipe or frames smear.
         painter.setCompositionMode(QPainter.CompositionMode.CompositionMode_Source)
         painter.fillRect(event.rect(), QColor(0, 0, 0, 0))
         painter.setCompositionMode(QPainter.CompositionMode.CompositionMode_SourceOver)

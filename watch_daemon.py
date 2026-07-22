@@ -81,6 +81,26 @@ def _vendor_dir() -> Path:
     return Path(__file__).resolve().parent / "vendor"
 
 
+def _is_packaged_anki_executable(executable: str) -> bool:
+    """True when sys.executable is Anki itself (not a Python CLI).
+
+    Briefcase Windows builds ship ``Anki.exe`` as the interpreter host. Passing
+    a ``.py`` path to it opens that path as a deck file and starts a second
+    Anki instance — which surfaces as "Unsupported file type" plus the
+    single-instance warning.
+    """
+    name = Path(executable).name.lower()
+    return name in ("anki", "anki.exe")
+
+
+def _helper_python() -> Optional[str]:
+    """Return a Python executable safe for running watch_helper.py, or None."""
+    executable = sys.executable
+    if not executable or _is_packaged_anki_executable(executable):
+        return None
+    return executable
+
+
 def _should_run_daemon() -> bool:
     """Daemon runs on macOS/Windows for system enforcement and/or tray display."""
     if not _supports_watch_daemon():
@@ -98,6 +118,7 @@ class WatchDaemonController:
 
     def __init__(self) -> None:
         self._proc: Optional[subprocess.Popen[bytes]] = None
+        self._inproc = False
         self._last_seconds: Optional[int] = None
         self._last_playing: Optional[bool] = None
         self._poll_timer = QTimer()
@@ -268,7 +289,9 @@ class WatchDaemonController:
                 except Exception:
                     log_exception("watch_daemon: budget sync callback failed")
         # Reattach if helper died unexpectedly while we expect it.
-        if not self._proc_alive() and not pid_is_alive(int(state.get("pid", 0) or 0)):
+        if not self._helper_alive() and not self._external_helper_alive(
+            int(state.get("pid", 0) or 0)
+        ):
             self._ensure_helper(force=False)
 
     def _proc_alive(self) -> bool:
@@ -276,20 +299,51 @@ class WatchDaemonController:
             return True
         return False
 
+    def _inproc_alive(self) -> bool:
+        if not self._inproc:
+            return False
+        try:
+            from .watch_helper import windows_helper_inprocess_alive
+
+            return windows_helper_inprocess_alive()
+        except Exception:
+            return False
+
+    def _helper_alive(self) -> bool:
+        return self._proc_alive() or self._inproc_alive()
+
+    def _external_helper_alive(self, pid: int) -> bool:
+        """True if a *separate* helper process owns ``pid``."""
+        if pid <= 0 or not pid_is_alive(pid):
+            return False
+        # In-process Windows helper publishes Anki's own PID; that must not
+        # count as an external helper still running.
+        if pid == os.getpid():
+            return self._inproc_alive()
+        return True
+
     def _ensure_helper(self, *, force: bool = False) -> None:
         state = read_state(_state_path())
         existing_pid = int(state.get("pid", 0) or 0)
-        if pid_is_alive(existing_pid):
-            log(f"watch_daemon: reattached to helper pid={existing_pid}")
-            self._proc = None
+        if self._external_helper_alive(existing_pid):
+            if existing_pid == os.getpid():
+                log(f"watch_daemon: in-process helper already running pid={existing_pid}")
+            else:
+                log(f"watch_daemon: reattached to helper pid={existing_pid}")
+                self._proc = None
+                self._inproc = False
             return
-        if self._proc_alive():
+        if self._helper_alive():
             return
         script = _helper_script()
         if not script.is_file():
             log(f"watch_daemon: helper missing at {script}")
             return
         state_path = _state_path()
+        python = _helper_python()
+        if python is None:
+            self._start_helper_inprocess(state_path=state_path, force=force)
+            return
         vendor = _vendor_dir()
         env = os.environ.copy()
         # Helper imports sibling modules + vendor packages.
@@ -303,7 +357,7 @@ class WatchDaemonController:
         )
         log_file = None
         popen_kwargs: dict = {
-            "args": [sys.executable, str(script), "--state", str(state_path)],
+            "args": [python, str(script), "--state", str(state_path)],
             "env": env,
             "stdout": subprocess.DEVNULL,
             "stderr": subprocess.DEVNULL,
@@ -326,25 +380,62 @@ class WatchDaemonController:
                 log_exception("watch_daemon: could not open helper log")
         try:
             self._proc = subprocess.Popen(**popen_kwargs)
+            self._inproc = False
         except OSError:
             log_exception("watch_daemon: failed to start helper")
             self._proc = None
             if log_file is not None:
                 log_file.close()
+            if sys.platform == "win32":
+                self._start_helper_inprocess(state_path=state_path, force=force)
             return
         if log_file is not None:
             log_file.close()
         log(
             f"watch_daemon: started helper pid={self._proc.pid} "
-            f"python={sys.executable!r} state={str(state_path)!r} force={force}"
+            f"python={python!r} state={str(state_path)!r} force={force}"
         )
 
+    def _start_helper_inprocess(self, *, state_path: Path, force: bool) -> None:
+        if sys.platform != "win32":
+            log(
+                "watch_daemon: packaged Anki has no Python CLI; "
+                "cannot spawn watch_helper subprocess on this platform"
+            )
+            return
+        try:
+            from .watch_helper import start_windows_helper_inprocess
+
+            start_windows_helper_inprocess(state_path)
+            self._proc = None
+            self._inproc = True
+            log(
+                "watch_daemon: started in-process Windows helper "
+                f"(Anki executable is not a Python CLI) state={str(state_path)!r} "
+                f"force={force}"
+            )
+        except Exception:
+            log_exception("watch_daemon: failed to start in-process helper")
+            self._inproc = False
+
     def _stop_helper(self) -> None:
-        write_exit(_state_path())
+        state_path = _state_path()
+        write_exit(state_path)
         proc = self._proc
+        inproc = self._inproc
         self._proc = None
+        self._inproc = False
+        if inproc:
+            try:
+                from .watch_helper import stop_windows_helper_inprocess
+
+                stop_windows_helper_inprocess(state_path)
+                log("watch_daemon: stopped in-process helper")
+            except Exception:
+                log_exception("watch_daemon: failed stopping in-process helper")
+            return
         # Also signal any reattached orphan via exit file (already written).
-        state = read_state(_state_path())
+        state = read_state(state_path)
         pid = int(state.get("pid", 0) or 0)
         if proc is not None and proc.poll() is None:
             try:
@@ -356,7 +447,7 @@ class WatchDaemonController:
                 except Exception:
                     pass
             log(f"watch_daemon: stopped helper pid={proc.pid}")
-        elif pid_is_alive(pid):
+        elif pid > 0 and pid != os.getpid() and pid_is_alive(pid):
             terminate_pid(pid)
             log(f"watch_daemon: signaled helper pid={pid}")
 
