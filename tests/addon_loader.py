@@ -65,16 +65,15 @@ def load_addon_module(name: str, filename: str) -> ModuleType:
 
     _ensure_pkg()
     path = ADDON_ROOT / filename
-    spec = importlib.util.spec_from_file_location(
-        full_name,
-        path,
-        submodule_search_locations=[str(ADDON_ROOT)],
-    )
+    # Load as a regular submodule (not a package). Passing
+    # submodule_search_locations would mark it as a package so
+    # __spec__.parent == full_name, which conflicts with relative
+    # imports that need the parent package name.
+    spec = importlib.util.spec_from_file_location(full_name, path)
     if spec is None or spec.loader is None:
         raise ImportError(f"Cannot load {path}")
 
     module = importlib.util.module_from_spec(spec)
-    module.__package__ = _PKG
     sys.modules[full_name] = module
     spec.loader.exec_module(module)
     return module

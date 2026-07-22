@@ -89,7 +89,8 @@ def _is_packaged_anki_executable(executable: str) -> bool:
     Anki instance — which surfaces as "Unsupported file type" plus the
     single-instance warning.
     """
-    name = Path(executable).name.lower()
+    # Split on both separators so Windows paths still match on Linux CI.
+    name = executable.replace("\\", "/").rsplit("/", 1)[-1].lower()
     return name in ("anki", "anki.exe")
 
 
