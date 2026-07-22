@@ -13,7 +13,9 @@ from typing import Optional, Sequence
 import pymunk
 from aqt import mw
 from aqt.qt import (
+    QApplication,
     QColor,
+    QElapsedTimer,
     QEvent,
     QFont,
     QMouseEvent,
@@ -24,7 +26,6 @@ from aqt.qt import (
     QPoint,
     QRect,
     QRectF,
-    QRegion,
     Qt,
     QTimer,
     QWidget,
@@ -37,6 +38,8 @@ from .utils import format_seconds
 _PHYSICS_FPS = 48
 _DT = 1.0 / _PHYSICS_FPS
 _PHYSICS_SUBSTEPS = 3
+_MAX_PHYSICS_CATCHUP_STEPS = 4
+_MAX_FRAME_SEC = _DT * _MAX_PHYSICS_CATCHUP_STEPS
 _GRAVITY = 1800.0
 _MAX_FALL_SPEED = 1200.0
 _RESTITUTION = 0.35
@@ -57,14 +60,30 @@ _DEBUG_STATUS_INTERVAL_SEC = 1.0
 _MIN_FLOOR_HEIGHT_FRACTION = 0.45
 _FLOOR_CHANGE_WAKE_PX = 8.0
 _DRAG_MAX_FORCE = 1.2e5
-_DRAG_MASK_PAD = 4
-# Keep the watch HUD paintable when the cube input mask is active.
-_HUD_MASK_RECT = QRect(0, 0, 240, 48)
 
 # Collision type for cube shapes in Pymunk.
 CUBE_TYPE = 2
 # Static segment radius. Too thin + high fall speed ⇒ tunneling through the floor.
 _BOUNDARY_RADIUS = 2.0
+
+
+def consume_physics_time(
+    world: "PhysicsWorld",
+    accum: float,
+    *,
+    dt: float = _DT,
+    max_steps: int = _MAX_PHYSICS_CATCHUP_STEPS,
+) -> float:
+    """Advance *world* by fixed *dt* steps; return leftover accumulator time."""
+    steps = 0
+    while accum >= dt and steps < max_steps:
+        world.step(dt)
+        accum -= dt
+        steps += 1
+    if steps >= max_steps and accum > dt:
+        # Drop backlog after a hitch so we don't spiral.
+        accum = 0.0
+    return accum
 
 
 def _log(message: str) -> None:
@@ -536,12 +555,35 @@ class _HostGeometryFilter(QObject):
         return False
 
 
+class _OverlayInputFilter(QObject):
+    """Pick and drag cubes while the overlay stays mouse-transparent to Anki."""
+
+    def __init__(self, overlay: "BudgetOverlay") -> None:
+        super().__init__(overlay)
+        self._overlay = overlay
+
+    def eventFilter(self, obj: QObject, event: QEvent) -> bool:
+        etype = event.type()
+        if etype not in (
+            QEvent.Type.MouseButtonPress,
+            QEvent.Type.MouseButtonRelease,
+            QEvent.Type.MouseMove,
+        ):
+            return False
+        if not isinstance(event, QMouseEvent):
+            return False
+        return self._overlay._handle_filtered_mouse(event)
+
+
 class BudgetOverlay(QWidget):
     """Frameless tool window over Anki's central widget.
 
     Hosted as a native tool window (not an in-process child) so translucent
     clears work on every platform. Child widgets with WA_TranslucentBackground
     often lack a real alpha surface on Windows and paint opaque black instead.
+
+    Always mouse-transparent: cube picking goes through an app-level filter so
+    we never need setMask (which is slow on Windows and causes motion trails).
     """
 
     def __init__(self, parent: QWidget) -> None:
@@ -552,31 +594,36 @@ class BudgetOverlay(QWidget):
             | Qt.WindowType.WindowDoesNotAcceptFocus,
         )
         self.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating, True)
-        # Empty areas stay click-through via setMask; cubes grab input themselves.
         self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
         self.setAttribute(Qt.WidgetAttribute.WA_NoSystemBackground, True)
         self.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         self.setAutoFillBackground(False)
-        self.setMouseTracking(True)
-        self.setCursor(Qt.CursorShape.OpenHandCursor)
 
         self.world = PhysicsWorld()
         self._display_seconds = 0
         self._show_timer = True
         self._debug_status_accum = 0.0
+        self._physics_accum = 0.0
         self._dragging = False
+        self._hover_cursor = False
+        self._clock = QElapsedTimer()
         self._host_filter = _HostGeometryFilter(self)
+        self._input_filter = _OverlayInputFilter(self)
         self._host_widgets: list[QWidget] = []
+        self._app_filter_installed = False
         self._install_host_filters(parent)
+        self._install_input_filter()
 
         self._timer = QTimer(self)
+        self._timer.setTimerType(Qt.TimerType.PreciseTimer)
         self._timer.setInterval(int(1000 / _PHYSICS_FPS))
         self._timer.timeout.connect(self._on_tick)
 
         self._sync_geometry()
         self.show()
         self.raise_()
+        self._clock.start()
         self._timer.start()
         self._request_repaint()
 
@@ -597,12 +644,44 @@ class BudgetOverlay(QWidget):
                 pass
         self._host_widgets.clear()
 
+    def _install_input_filter(self) -> None:
+        app = QApplication.instance()
+        if app is None or self._app_filter_installed:
+            return
+        app.installEventFilter(self._input_filter)
+        self._app_filter_installed = True
+
+    def _remove_input_filter(self) -> None:
+        if not self._app_filter_installed:
+            return
+        app = QApplication.instance()
+        if app is not None:
+            try:
+                app.removeEventFilter(self._input_filter)
+            except RuntimeError:
+                pass
+        self._app_filter_installed = False
+
+    def _clear_hover_cursor(self) -> None:
+        if not self._hover_cursor:
+            return
+        QApplication.restoreOverrideCursor()
+        self._hover_cursor = False
+
+    def _set_hover_cursor(self, shape: Qt.CursorShape) -> None:
+        if self._hover_cursor:
+            QApplication.changeOverrideCursor(shape)
+        else:
+            QApplication.setOverrideCursor(shape)
+            self._hover_cursor = True
+
     def shutdown(self) -> None:
         if self._dragging:
-            self.releaseMouse()
             self._dragging = False
-        self.world.end_drag()
+            self.world.end_drag()
+        self._clear_hover_cursor()
         self._timer.stop()
+        self._remove_input_filter()
         self._remove_host_filters()
         self.hide()
         self.deleteLater()
@@ -630,94 +709,75 @@ class BudgetOverlay(QWidget):
         self.raise_()
         self._request_repaint()
 
-    def _event_pos(self, event: QMouseEvent) -> QPoint:
-        if hasattr(event, "position"):
-            return event.position().toPoint()
-        return event.pos()
+    def _global_pos(self, event: QMouseEvent) -> QPoint:
+        if hasattr(event, "globalPosition"):
+            return event.globalPosition().toPoint()
+        return event.globalPos()
+
+    def _local_from_global(self, global_pos: QPoint) -> QPoint:
+        return self.mapFromGlobal(global_pos)
+
+    def _handle_filtered_mouse(self, event: QMouseEvent) -> bool:
+        """Handle cube pick/drag from the app filter. Returns True if consumed."""
+        try:
+            if not self.isVisible():
+                return False
+        except RuntimeError:
+            return False
+
+        etype = event.type()
+        global_pos = self._global_pos(event)
+        local = self._local_from_global(global_pos)
+        inside = self.rect().contains(local)
+
+        if self._dragging:
+            if etype == QEvent.Type.MouseMove:
+                self.world.update_drag(float(local.x()), float(local.y()))
+                self._request_repaint()
+                return True
+            if (
+                etype == QEvent.Type.MouseButtonRelease
+                and event.button() == Qt.MouseButton.LeftButton
+            ):
+                self.world.update_drag(float(local.x()), float(local.y()))
+                self.world.end_drag()
+                self._dragging = False
+                self._clear_hover_cursor()
+                if inside and self.world.hit_test(float(local.x()), float(local.y())) is not None:
+                    self._set_hover_cursor(Qt.CursorShape.OpenHandCursor)
+                self._request_repaint()
+                return True
+            return True
+
+        if not inside:
+            self._clear_hover_cursor()
+            return False
+
+        px, py = float(local.x()), float(local.y())
+        cube = self.world.hit_test(px, py)
+
+        if etype == QEvent.Type.MouseMove:
+            if cube is not None:
+                self._set_hover_cursor(Qt.CursorShape.OpenHandCursor)
+            else:
+                self._clear_hover_cursor()
+            return False
+
+        if (
+            etype == QEvent.Type.MouseButtonPress
+            and event.button() == Qt.MouseButton.LeftButton
+            and cube is not None
+        ):
+            self.world.begin_drag(cube, px, py)
+            self._dragging = True
+            self._set_hover_cursor(Qt.CursorShape.ClosedHandCursor)
+            self._request_repaint()
+            return True
+
+        return False
 
     def _request_repaint(self) -> None:
-        """Repaint the overlay; reapply the mouse mask after painting.
-
-        setMask() clips both hits and paints. If the mask moves with cubes,
-        old pixels outside the new mask are never erased — motion trails.
-        Clearing the mask before update lets paintEvent wipe the full widget.
-        """
-        if not self._dragging:
-            self.clearMask()
-            self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
         self.update()
-
-    def _apply_input_mask(self) -> None:
-        """Restrict mouse hits to cubes after paint (does not clip this frame)."""
-        if self._dragging:
-            self.clearMask()
-            self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, False)
-            return
-
-        region = QRegion()
-        pad = _DRAG_MASK_PAD
-        for cube in self.world.alive_cubes():
-            x, y, w, h = cube.rect()
-            region = region.united(
-                QRegion(
-                    int(x) - pad,
-                    int(y) - pad,
-                    int(w) + pad * 2,
-                    int(h) + pad * 2,
-                )
-            )
-
-        if region.isEmpty():
-            if self._show_timer:
-                region = QRegion(_HUD_MASK_RECT)
-            else:
-                self.clearMask()
-                self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
-                return
-
-        if self._show_timer:
-            region = region.united(QRegion(_HUD_MASK_RECT))
-        self.setMask(region)
-        self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, False)
-
-    def mousePressEvent(self, event: QMouseEvent) -> None:  # noqa: N802
-        if event.button() != Qt.MouseButton.LeftButton:
-            super().mousePressEvent(event)
-            return
-        pos = self._event_pos(event)
-        px, py = float(pos.x()), float(pos.y())
-        cube = self.world.hit_test(px, py)
-        if cube is None:
-            event.ignore()
-            return
-        self.world.begin_drag(cube, px, py)
-        self._dragging = True
-        self.setCursor(Qt.CursorShape.ClosedHandCursor)
-        self.grabMouse()
-        self._request_repaint()
-        event.accept()
-
-    def mouseMoveEvent(self, event: QMouseEvent) -> None:  # noqa: N802
-        if not self._dragging:
-            super().mouseMoveEvent(event)
-            return
-        pos = self._event_pos(event)
-        self.world.update_drag(float(pos.x()), float(pos.y()))
-        self._request_repaint()
-        event.accept()
-
-    def mouseReleaseEvent(self, event: QMouseEvent) -> None:  # noqa: N802
-        if event.button() != Qt.MouseButton.LeftButton or not self._dragging:
-            super().mouseReleaseEvent(event)
-            return
-        pos = self._event_pos(event)
-        self.world.update_drag(float(pos.x()), float(pos.y()))
-        self.world.end_drag()
-        self._dragging = False
-        self.releaseMouse()
-        self.setCursor(Qt.CursorShape.OpenHandCursor)
-        self._request_repaint()
-        event.accept()
 
     def set_floor_y(self, floor_y: float) -> None:
         new_floor = max(1.0, min(float(floor_y), self.world.height))
@@ -746,9 +806,9 @@ class BudgetOverlay(QWidget):
 
     def hydrate_settled(self, count: int) -> None:
         if self._dragging:
-            self.releaseMouse()
             self._dragging = False
-            self.setCursor(Qt.CursorShape.OpenHandCursor)
+            self.world.end_drag()
+            self._clear_hover_cursor()
         self.world.clear()
         self.world.spawn_settled_pile(count)
         self._request_repaint()
@@ -773,10 +833,15 @@ class BudgetOverlay(QWidget):
         self._request_repaint()
 
     def _on_tick(self) -> None:
+        elapsed = self._clock.restart() / 1000.0
+        frame = min(max(0.0, elapsed), _MAX_FRAME_SEC)
         if self.world.cubes:
-            self.world.step(_DT)
+            self._physics_accum += frame
+            self._physics_accum = consume_physics_time(self.world, self._physics_accum)
+        else:
+            self._physics_accum = 0.0
         if _DEBUG_DRAW_COLLIDERS:
-            self._debug_status_accum += _DT
+            self._debug_status_accum += frame
             if self._debug_status_accum >= _DEBUG_STATUS_INTERVAL_SEC:
                 self._debug_status_accum = 0.0
                 self._log_debug_status()
@@ -870,8 +935,6 @@ class BudgetOverlay(QWidget):
         if dragged is not None and dragged.alive:
             self._paint_cubes(painter, [dragged])
         painter.end()
-        # Apply after painting so setMask cannot clip away the transparent wipe.
-        self._apply_input_mask()
 
     def _paint_cubes(self, painter: QPainter, cubes: Sequence[Cube]) -> None:
         for cube in cubes:

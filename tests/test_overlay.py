@@ -175,3 +175,28 @@ def test_despawn_skips_dragged_cube() -> None:
     assert dragged.despawn_t is None
     assert world.cube_count() == 1
     assert world.drag_cube is dragged
+
+
+def test_consume_physics_time_catchup_and_cap() -> None:
+    overlay = load_addon_module("overlay", "overlay.py")
+    world = overlay.PhysicsWorld(width=200, height=400, floor_y=400)
+    cube = world.spawn_falling()
+    cube.x = 90
+    cube.y = 50
+    cube.vx = 0
+    cube.vy = 0
+    y0 = cube.y
+
+    leftover = overlay.consume_physics_time(world, overlay._DT * 2.5)
+    assert abs(leftover - overlay._DT * 0.5) < 1e-9
+    assert cube.y > y0  # gravity advanced across multiple steps
+
+    y1 = cube.y
+    # Huge backlog is capped then discarded so a hitch cannot spiral.
+    leftover2 = overlay.consume_physics_time(
+        world,
+        overlay._DT * 20,
+        max_steps=overlay._MAX_PHYSICS_CATCHUP_STEPS,
+    )
+    assert leftover2 == 0.0
+    assert cube.y > y1
