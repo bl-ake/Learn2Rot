@@ -1,0 +1,8 @@
+# Windows vendor deps (use via fetch_vendor.py).
+-r requirements-common.txt
+pystray>=0.19.0
+Pillow>=10.0.0
+six>=1.9
+winrt-runtime>=3.0
+winrt-Windows.Foundation>=3.0
+winrt-Windows.Media.Control>=3.0

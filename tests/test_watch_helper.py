@@ -9,10 +9,13 @@ from types import SimpleNamespace
 
 _TESTS_DIR = Path(__file__).resolve().parent
 _ROOT = _TESTS_DIR.parent
-for path in (_ROOT, _ROOT / "vendor"):
-    path_str = str(path)
-    if path.is_dir() and path_str not in sys.path:
-        sys.path.insert(0, path_str)
+if str(_ROOT) not in sys.path:
+    sys.path.insert(0, str(_ROOT))
+from vendor_paths import resolve_vendor_dir  # noqa: E402
+
+_vendor = resolve_vendor_dir(_ROOT)
+if _vendor is not None and str(_vendor) not in sys.path:
+    sys.path.insert(0, str(_vendor))
 if str(_TESTS_DIR) not in sys.path:
     sys.path.insert(0, str(_TESTS_DIR))
 

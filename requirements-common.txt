@@ -1,0 +1,2 @@
+# Shared runtime deps for all supported Anki platforms (Python 3.13).
+pymunk>=7.0,<8

@@ -7,6 +7,7 @@
 See https://addon-docs.ankiweb.net/sharing.html
 
 Usage:
+    python fetch_vendor.py         # populate vendor/<tag>/ trees first
     python package.py              # write dist/Learn2Rot.ankiaddon
     python package.py --check      # verify package contents without writing
 """
@@ -21,6 +22,8 @@ import time
 import zipfile
 from pathlib import Path
 
+from vendor_paths import VENDOR_TAGS
+
 ADDON_DIR = Path(__file__).resolve().parent
 MANIFEST_PATH = ADDON_DIR / "manifest.json"
 ADDON_JSON_PATH = ADDON_DIR / "addon.json"
@@ -32,6 +35,7 @@ REQUIRED_PATHS = (
     "manifest.json",
     "config.json",
     "web/player.html",
+    "vendor_paths.py",
 )
 
 REQUIRED_ADDON_JSON_KEYS = (
@@ -66,8 +70,12 @@ EXCLUDE_NAMES = frozenset(
         "tests",
         "requirements-dev.txt",
         "requirements.txt",
+        "requirements-common.txt",
+        "requirements-darwin.txt",
+        "requirements-win32.txt",
         "pytest.ini",
         "package.py",
+        "fetch_vendor.py",
     }
 )
 EXCLUDE_SUFFIXES = frozenset({".pyc", ".pyo", ".ankiaddon"})
@@ -111,12 +119,43 @@ def validate_addon_json() -> list[str]:
     return []
 
 
+def validate_vendor_trees() -> list[str]:
+    """Require platform-tagged vendor trees from fetch_vendor.py."""
+    errors: list[str] = []
+    vendor_root = ADDON_DIR / "vendor"
+    if not vendor_root.is_dir():
+        return [
+            "Missing vendor/ (run: python fetch_vendor.py)",
+        ]
+    for tag in VENDOR_TAGS:
+        target = vendor_root / tag
+        if not target.is_dir():
+            errors.append(f"missing vendor/{tag}/ (run: python fetch_vendor.py)")
+            continue
+        if not (target / "pymunk").is_dir():
+            errors.append(f"vendor/{tag}/ missing pymunk/")
+        if not any(target.glob("_cffi_backend*")):
+            errors.append(f"vendor/{tag}/ missing _cffi_backend*")
+        if tag.startswith("macosx") and not (target / "rumps").is_dir():
+            errors.append(f"vendor/{tag}/ missing rumps/")
+        if tag == "win_amd64" and not (target / "pystray").is_dir():
+            errors.append(f"vendor/{tag}/ missing pystray/")
+    return errors
+
+
 def _should_exclude(path: Path) -> bool:
     if path.name in EXCLUDE_NAMES:
         return True
     if path.suffix in EXCLUDE_SUFFIXES:
         return True
-    return any(part in EXCLUDE_NAMES for part in path.parts)
+    if any(part in EXCLUDE_NAMES for part in path.parts):
+        return True
+    # Only ship tagged vendor trees — skip legacy flat vendor/ natives.
+    parts = path.parts
+    if parts and parts[0] == "vendor":
+        if len(parts) < 2 or parts[1] not in VENDOR_TAGS:
+            return True
+    return False
 
 
 def collect_package_files() -> list[Path]:
@@ -142,6 +181,10 @@ def update_manifest_mod(manifest: dict, *, human_version: str) -> int:
 def build_package(
     output_path: Path, *, update_mod: bool = True, human_version: str
 ) -> list[str]:
+    vendor_errors = validate_vendor_trees()
+    if vendor_errors:
+        raise SystemExit("\n".join(vendor_errors))
+
     manifest = _load_manifest()
     if update_mod:
         update_manifest_mod(manifest, human_version=human_version)
@@ -188,6 +231,12 @@ def main(argv: list[str] | None = None) -> int:
     addon_errors = validate_addon_json()
     if addon_errors:
         for error in addon_errors:
+            print(error, file=sys.stderr)
+        return 1
+
+    vendor_errors = validate_vendor_trees()
+    if vendor_errors:
+        for error in vendor_errors:
             print(error, file=sys.stderr)
         return 1
 

@@ -22,11 +22,16 @@ from pathlib import Path
 from typing import Any, Optional
 
 _ROOT = Path(__file__).resolve().parent
-_VENDOR = _ROOT / "vendor"
-for candidate in (_ROOT, _VENDOR):
-    path = str(candidate)
-    if candidate.is_dir() and path not in sys.path:
-        sys.path.insert(0, path)
+if str(_ROOT) not in sys.path:
+    sys.path.insert(0, str(_ROOT))
+
+from vendor_paths import resolve_vendor_dir  # noqa: E402
+
+_VENDOR = resolve_vendor_dir(_ROOT)
+if _VENDOR is not None:
+    _vendor_path = str(_VENDOR)
+    if _vendor_path not in sys.path:
+        sys.path.insert(0, _vendor_path)
 
 from media_control import MediaController, create_media_controller  # noqa: E402
 from watch_state import (  # noqa: E402

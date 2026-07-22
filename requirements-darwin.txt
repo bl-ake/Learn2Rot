@@ -1,0 +1,4 @@
+# macOS vendor deps (use via fetch_vendor.py).
+-r requirements-common.txt
+rumps>=0.4.0
+pyobjc-framework-Cocoa>=10.0

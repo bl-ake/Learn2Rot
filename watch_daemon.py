@@ -77,8 +77,10 @@ def _helper_script() -> Path:
     return Path(__file__).resolve().parent / _HELPER_NAME
 
 
-def _vendor_dir() -> Path:
-    return Path(__file__).resolve().parent / "vendor"
+def _vendor_dir() -> Path | None:
+    from .vendor_paths import resolve_vendor_dir
+
+    return resolve_vendor_dir(Path(__file__).resolve().parent)
 
 
 def _is_packaged_anki_executable(executable: str) -> bool:
@@ -349,7 +351,7 @@ class WatchDaemonController:
         env = os.environ.copy()
         # Helper imports sibling modules + vendor packages.
         path_parts = [str(_helper_script().parent)]
-        if vendor.is_dir():
+        if vendor is not None and vendor.is_dir():
             path_parts.insert(0, str(vendor))
         env["PYTHONPATH"] = (
             os.pathsep.join(path_parts)
