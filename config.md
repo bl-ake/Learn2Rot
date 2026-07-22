@@ -10,7 +10,7 @@ These keys can be changed in **Tools → Learn2Rot → Settings...** or edited h
 |-----|---------|-------------|
 | `seconds_per_card` | `15` | Watch seconds earned per reviewed card (also one cube) |
 | `starting_budget_seconds` | `0` | Initial watch budget for new profiles |
-| `max_budget_seconds` | `600` | Maximum banked watch time (10 minutes) |
+| `max_budget_seconds` | `0` | Maximum banked watch time (`0` = unlimited) |
 | `dock_area` | `"right"` | Dock side: `"left"` or `"right"` |
 | `show_dock_in_review_only` | `false` | Hide the dock outside review mode |
 | `media_mode` | `"system"` | `"system"` (macOS Now Playing / Windows SMTC) or `"youtube"` (legacy embedded player) |

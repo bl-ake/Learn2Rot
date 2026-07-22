@@ -11,5 +11,6 @@ dependencies = [
     "rumps>=0.4.0 ; sys_platform == 'darwin'",
     "winrt-runtime>=3.0 ; sys_platform == 'win32'",
     "winrt-windows-foundation>=3.0 ; sys_platform == 'win32'",
+    "winrt-windows-foundation-collections>=3.0 ; sys_platform == 'win32'",
     "winrt-windows-media-control>=3.0 ; sys_platform == 'win32'",
 ]

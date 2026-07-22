@@ -15,10 +15,21 @@ from addon_loader import load_addon_module
 
 def test_budget_clamps_to_max(mock_mw) -> None:
     budget_mod = load_addon_module("budget", "budget.py")
+    mock_mw.addonManager.writeConfig("Learn2Rot", {"max_budget_seconds": 600})
     budget = budget_mod.BudgetManager("Learn2Rot")
     budget.load()
     budget.seconds = 9999
     assert budget.seconds == 600
+
+
+def test_budget_unlimited_when_max_is_zero(mock_mw) -> None:
+    budget_mod = load_addon_module("budget", "budget.py")
+    budget = budget_mod.BudgetManager("Learn2Rot")
+    budget.load()
+    budget.seconds = 9999
+    assert budget.seconds == 9999
+    budget.add_seconds(1)
+    assert budget.seconds == 10000
 
 
 def test_budget_add_and_subtract(mock_mw) -> None:

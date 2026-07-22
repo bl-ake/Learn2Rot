@@ -154,18 +154,30 @@ def _ctypes_send_command(command: int) -> bool:
         return False
 
 
+def _ensure_coroutine(awaitable: Awaitable[Any]) -> Any:
+    """Wrap non-coroutine awaitables for asyncio.run (e.g. PyWinRT IAsyncOperation)."""
+    if asyncio.iscoroutine(awaitable):
+        return awaitable
+
+    async def _await_it() -> Any:
+        return await awaitable
+
+    return _await_it()
+
+
 def _run_async(coro: Awaitable[Any]) -> Any:
     """Run an awaitable from sync code (helper timer / Anki main thread)."""
+    to_run = _ensure_coroutine(coro)
     try:
         asyncio.get_running_loop()
     except RuntimeError:
-        return asyncio.run(coro)
+        return asyncio.run(to_run)
     # Already inside a loop (unusual for this add-on): run in a fresh loop
     # on a throwaway thread so we never nest asyncio.run.
     import concurrent.futures
 
     with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
-        return pool.submit(asyncio.run, coro).result()
+        return pool.submit(asyncio.run, to_run).result()
 
 
 class UnsupportedMediaController:
@@ -360,7 +372,13 @@ class WindowsMediaController:
             manager = self._backend_factory()
             if manager is None:
                 return False
-            sessions = list(manager.get_sessions() or [])
+            # get_sessions() needs winrt.windows.foundation.collections; if that
+            # import fails (incomplete vendor), fall back to the current session.
+            sessions: list[Any] = []
+            try:
+                sessions = list(manager.get_sessions() or [])
+            except Exception:
+                sessions = []
             if not sessions:
                 current = manager.get_current_session()
                 if current is None:

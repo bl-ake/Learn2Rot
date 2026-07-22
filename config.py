@@ -58,7 +58,7 @@ DEFAULTS: dict[str, Any] = {
     "config_version": CONFIG_VERSION,
     "seconds_per_card": 15,
     "starting_budget_seconds": 0,
-    "max_budget_seconds": 600,
+    "max_budget_seconds": 0,
     "dock_area": "right",
     "show_dock_in_review_only": False,
     "youtube_show_controls": True,

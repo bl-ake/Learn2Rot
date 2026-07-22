@@ -190,6 +190,58 @@ def _async_runner(coro: Any) -> Any:
     return asyncio.run(coro)
 
 
+class _FakeAsyncOperation:
+    """Awaitable that is not a coroutine — mirrors PyWinRT IAsyncOperation."""
+
+    def __init__(self, value: Any) -> None:
+        self._value = value
+
+    def __await__(self):
+        async def _resolve() -> Any:
+            return self._value
+
+        return _resolve().__await__()
+
+
+def test_run_async_accepts_non_coroutine_awaitable() -> None:
+    """PyWinRT returns IAsyncOperation; asyncio.run requires a real coroutine."""
+    media_mod = load_addon_module("media_control", "media_control.py")
+    result = media_mod._run_async(_FakeAsyncOperation("ok"))
+    assert result == "ok"
+
+
+def test_run_async_accepts_coroutine() -> None:
+    media_mod = load_addon_module("media_control", "media_control.py")
+
+    async def _coro() -> str:
+        return "coro"
+
+    assert media_mod._run_async(_coro()) == "coro"
+
+
+def test_windows_backend_factory_uses_run_async_for_awaitable() -> None:
+    """Default SMTC factory path must tolerate non-coroutine awaitables."""
+    media_mod = load_addon_module("media_control", "media_control.py")
+    session = _FakeSession(title="Track", artist="Band", status=4)
+    manager = _FakeManager(current=session)
+
+    def factory() -> Any:
+        return media_mod._run_async(_FakeAsyncOperation(manager))
+
+    controller = media_mod.WindowsMediaController(
+        backend_factory=factory,
+        async_runner=media_mod._run_async,
+    )
+    # Properties also come back as IAsyncOperation-style awaitables.
+    session.try_get_media_properties_async = (  # type: ignore[method-assign]
+        lambda: _FakeAsyncOperation(_FakeProps("Track", "Band"))
+    )
+    info = controller.get_now_playing()
+    assert info.title == "Track"
+    assert info.artist == "Band"
+    assert info.is_playing is True
+
+
 def test_windows_get_now_playing() -> None:
     media_mod = load_addon_module("media_control", "media_control.py")
     session = _FakeSession(title="Track", artist="Band", status=4)
@@ -235,6 +287,24 @@ def test_windows_pause_all_playing_sessions() -> None:
     assert playing.pause_calls == 1
     assert also_playing.pause_calls == 1
     assert paused.pause_calls == 0
+
+
+def test_windows_pause_falls_back_when_get_sessions_fails() -> None:
+    """Incomplete PyWinRT vendor can make get_sessions() raise (collections)."""
+    media_mod = load_addon_module("media_control", "media_control.py")
+    session = _FakeSession(title="A", status=4)
+
+    class _BrokenSessionsManager(_FakeManager):
+        def get_sessions(self) -> list[_FakeSession]:
+            raise ModuleNotFoundError("winrt.windows.foundation.collections")
+
+    manager = _BrokenSessionsManager(current=session, sessions=[session])
+    controller = media_mod.WindowsMediaController(
+        backend_factory=lambda: manager,
+        async_runner=_async_runner,
+    )
+    assert controller.pause() is True
+    assert session.pause_calls == 1
 
 
 def test_windows_pause_falls_back_to_stop() -> None:

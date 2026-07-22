@@ -830,8 +830,14 @@ class Learn2RotDock(QDockWidget):
         seconds = self._budget.seconds
         cap = self._budget.max_seconds()
         self._budget_label.setText(f"Watch time remaining: {format_seconds(seconds)}")
-        self._budget_bar.setRange(0, cap)
-        self._budget_bar.setValue(min(seconds, cap))
+        if cap <= 0:
+            # Unlimited: keep the bar full relative to the current balance.
+            display_cap = max(seconds, 1)
+            self._budget_bar.setRange(0, display_cap)
+            self._budget_bar.setValue(seconds)
+        else:
+            self._budget_bar.setRange(0, cap)
+            self._budget_bar.setValue(min(seconds, cap))
 
     def _update_now_playing_label(self) -> None:
         if not hasattr(self, "_now_playing_label"):

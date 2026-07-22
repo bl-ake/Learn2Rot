@@ -17,14 +17,14 @@ By default on macOS and Windows, **Anki Media Timer** pauses system media when y
 Open **Tools → Learn2Rot → Settings...**
 
 - **Seconds per card / cube** — watch time and cube size per answered card
-- **Maximum watch budget** — upper limit on banked seconds
+- **Maximum watch budget** — upper limit on banked seconds (`0` = unlimited; default)
 - **Auto-resume media when budget is restored** — off by default
 - **Show Anki Media Timer icon** — on by default (menu bar on macOS, system tray on Windows); turn off to hide the icon while keeping pause enforcement
 - **Quit with Anki** — on by default; turn off to keep pause enforcement after Anki closes
 - **Use embedded YouTube player (legacy)** — restore the in-dock queue/player
 - **Show dock in review only** — for legacy player dock visibility
 - **Dock side** — left or right (legacy player)
-- **Debug logging** — write diagnostic events to `learn2rot.log`
+- **Debug logging** — write diagnostic events to `learn2rot.log` (off by default)
 
 ## Potential Annoyances
 

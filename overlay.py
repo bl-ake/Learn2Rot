@@ -1123,8 +1123,9 @@ class BudgetOverlayController:
             return
         # Ensure floor is ready before stacking hydrate piles.
         self.refresh_floor()
-        cap = max_cube_count(max_budget_seconds, self._chunk)
-        count = min(cube_count_for_seconds(seconds, self._chunk), cap)
+        count = cube_count_for_seconds(seconds, self._chunk)
+        if max_budget_seconds > 0:
+            count = min(count, max_cube_count(max_budget_seconds, self._chunk))
         self._overlay.hydrate_settled(count)
 
     def on_budget_seconds(
@@ -1150,8 +1151,9 @@ class BudgetOverlayController:
         if not self.cubes_enabled():
             self._clear_cubes_only()
             return
-        cap = max_cube_count(max_budget_seconds, self._chunk)
-        target = min(cube_count_for_seconds(seconds, self._chunk), cap)
+        target = cube_count_for_seconds(seconds, self._chunk)
+        if max_budget_seconds > 0:
+            target = min(target, max_cube_count(max_budget_seconds, self._chunk))
         # Keep floor pinned to the review bottom-bar height on every screen.
         self.refresh_floor()
         self._overlay.sync_to_count(target, falling=falling)

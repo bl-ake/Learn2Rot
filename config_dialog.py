@@ -65,10 +65,11 @@ class ConfigDialog(QDialog):
         form.addRow("Starting budget for new profiles:", self.starting_budget)
 
         self.max_budget = QSpinBox()
-        self.max_budget.setRange(1, 86400)
+        self.max_budget.setRange(0, 86400)
         self.max_budget.setSuffix(" sec")
-        self.max_budget.setValue(int(config.get("max_budget_seconds", 600)))
-        form.addRow("Maximum watch budget (default 10 min):", self.max_budget)
+        self.max_budget.setSpecialValueText("unlimited")
+        self.max_budget.setValue(int(config.get("max_budget_seconds", 0)))
+        form.addRow("Maximum watch budget (0 = unlimited):", self.max_budget)
 
         current_budget_row = QWidget()
         current_budget_layout = QHBoxLayout(current_budget_row)

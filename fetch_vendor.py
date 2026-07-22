@@ -19,6 +19,7 @@ import os
 import shutil
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 from vendor_paths import VENDOR_TAGS, vendor_tag
@@ -26,6 +27,9 @@ from vendor_paths import VENDOR_TAGS, vendor_tag
 ADDON_DIR = Path(__file__).resolve().parent
 VENDOR_ROOT = ADDON_DIR / "vendor"
 PYTHON_VERSION = "313"
+# pip must not run with cwd=ADDON_DIR: this tree has queue.py, which shadows
+# the stdlib queue module and breaks pip's logging imports.
+_PIP_CWD = Path(tempfile.gettempdir())
 
 # (vendor_subdir, pip --platform, requirements file, needs_rumps_sdist)
 TARGETS: list[tuple[str, str, str, bool]] = [
@@ -41,6 +45,27 @@ _PYOBJC_PIP_PLATFORM = "macosx_10_13_universal2"
 def _run(cmd: list[str], *, cwd: Path | None = None) -> None:
     print("+", " ".join(cmd), flush=True)
     subprocess.run(cmd, check=True, cwd=cwd)
+
+
+def _ensure_pip() -> None:
+    """Fail fast with a clear message if this interpreter has no pip."""
+    probe = subprocess.run(
+        [sys.executable, "-m", "pip", "--version"],
+        cwd=_PIP_CWD,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if probe.returncode == 0:
+        return
+    detail = (probe.stderr or probe.stdout or "").strip()
+    raise SystemExit(
+        "fetch_vendor.py requires pip on this interpreter.\n"
+        f"  executable: {sys.executable}\n"
+        f"  detail: {detail or 'python -m pip --version failed'}\n"
+        "Install pip (e.g. python -m ensurepip --upgrade) or run with an "
+        "interpreter that has pip. Tip: use --host-only for local iteration."
+    )
 
 
 def _pip_install_binary(
@@ -73,7 +98,7 @@ def _pip_install_binary(
         cmd.extend(["-r", str(requirements)])
     if packages:
         cmd.extend(packages)
-    _run(cmd, cwd=ADDON_DIR)
+    _run(cmd, cwd=_PIP_CWD)
 
 
 def _pip_install_sdist(target: Path, *packages: str) -> None:
@@ -90,7 +115,7 @@ def _pip_install_sdist(target: Path, *packages: str) -> None:
         "--no-deps",
         *packages,
     ]
-    _run(cmd, cwd=ADDON_DIR)
+    _run(cmd, cwd=_PIP_CWD)
 
 
 def _cleanup_tree(target: Path) -> None:
@@ -162,6 +187,7 @@ def fetch_target(tag: str, pip_platform: str, requirements_name: str, needs_rump
                 "pymunk>=7.0,<8",
                 "winrt-runtime>=3.0",
                 "winrt-Windows.Foundation>=3.0",
+                "winrt-Windows.Foundation.Collections>=3.0",
                 "winrt-Windows.Media.Control>=3.0",
             ],
         )
@@ -199,6 +225,7 @@ def main(argv: list[str] | None = None) -> int:
     VENDOR_ROOT.mkdir(parents=True, exist_ok=True)
     # Avoid inheriting host site-packages when cross-compiling.
     os.environ.setdefault("PIP_DISABLE_PIP_VERSION_CHECK", "1")
+    _ensure_pip()
 
     for item in selected:
         fetch_target(*item)

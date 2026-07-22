@@ -27,6 +27,8 @@ def test_get_config_merges_defaults(mock_mw) -> None:
     assert config["system_media_poll_ms"] == 500
     assert config["show_menubar_watch_time"] is True
     assert config["quit_with_anki"] is True
+    assert config["debug_logging"] is False
+    assert config["max_budget_seconds"] == 0
 
 
 def test_save_preferences_updates_only_preference_keys(mock_mw) -> None:
@@ -78,6 +80,8 @@ def test_preference_defaults_subset() -> None:
     assert defaults["show_overlay_timer"] is True
     assert defaults["show_menubar_watch_time"] is True
     assert defaults["quit_with_anki"] is True
+    assert defaults["debug_logging"] is False
+    assert defaults["max_budget_seconds"] == 0
 
 
 def test_migrate_config_normalizes_show_budget_cubes() -> None:

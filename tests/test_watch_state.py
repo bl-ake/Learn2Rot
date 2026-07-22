@@ -51,6 +51,20 @@ def test_apply_pending_adjustments_clamps() -> None:
     assert with_subtract["budget_seconds"] == 100
 
 
+def test_apply_pending_adjustments_unlimited_max() -> None:
+    ws = load_addon_module("watch_state", "watch_state.py")
+    applied = ws.apply_pending_adjustments(
+        {
+            "budget_seconds": 100,
+            "credits": 500,
+            "subtracts": 0,
+            "prefs": {"max_budget_seconds": 0},
+        }
+    )
+    assert applied["budget_seconds"] == 600
+    assert applied["prefs"]["max_budget_seconds"] == 0
+
+
 def test_drain_one_second() -> None:
     ws = load_addon_module("watch_state", "watch_state.py")
     remaining, has_time = ws.drain_one_second(3)
@@ -112,6 +126,14 @@ def test_prefs_from_config() -> None:
     assert prefs["quit_with_anki"] is False
     assert prefs["enforce"] is True
     assert prefs["show_menubar_watch_time"] is False
+    assert prefs["max_budget_seconds"] == 300
+
+
+def test_prefs_from_config_default_max_unlimited() -> None:
+    ws = load_addon_module("watch_state", "watch_state.py")
+    prefs = ws.prefs_from_config({}, enforce=True)
+    assert prefs["max_budget_seconds"] == 0
+    assert prefs["quit_with_anki"] is True
 
 
 def test_pid_is_alive_rejects_invalid() -> None:

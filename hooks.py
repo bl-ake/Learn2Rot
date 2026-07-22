@@ -165,6 +165,44 @@ def clear_debug_log() -> None:
     showInfo("Learn2Rot debug log cleared.")
 
 
+def _adjust_timer_for_debug(delta_seconds: int) -> None:
+    """Add or remove watch time for debugging (menu actions)."""
+    if delta_seconds == 0:
+        return
+    budget = get_budget()
+    before = budget.seconds
+    if delta_seconds > 0:
+        budget.add_seconds(delta_seconds)
+    else:
+        budget.subtract_seconds(abs(delta_seconds))
+    budget.save()
+    after = budget.seconds
+    changed = after - before
+    if is_system_media_mode(get_config(_addon_module)):
+        if changed > 0:
+            watch_daemon.credit_watch_time(changed)
+        elif changed < 0:
+            watch_daemon.subtract_watch_time(abs(changed))
+    else:
+        watch_daemon.publish_budget(after)
+    _sync_overlay(falling=changed > 0)
+    if changed >= 0:
+        delta_text = f"+{format_seconds(changed)}"
+    else:
+        delta_text = f"-{format_seconds(abs(changed))}"
+    message = f"Learn2Rot debug: {delta_text} → {format_seconds(after)}"
+    log(message)
+    tooltip(message)
+
+
+def increment_timer() -> None:
+    _adjust_timer_for_debug(_chunk_seconds())
+
+
+def decrement_timer() -> None:
+    _adjust_timer_for_debug(-_chunk_seconds())
+
+
 def on_profile_open() -> None:
     config = get_config(_addon_module)
     log(
@@ -314,6 +352,16 @@ def setup_menu() -> None:
     settings_action = QAction("Settings...", mw)
     qconnect(settings_action.triggered, open_settings)
     menu.addAction(settings_action)
+
+    menu.addSeparator()
+
+    increment_action = QAction("Increment Timer", mw)
+    qconnect(increment_action.triggered, increment_timer)
+    menu.addAction(increment_action)
+
+    decrement_action = QAction("Decrement Timer", mw)
+    qconnect(decrement_action.triggered, decrement_timer)
+    menu.addAction(decrement_action)
 
     view_log_action = QAction("View Debug Log", mw)
     qconnect(view_log_action.triggered, open_debug_log)

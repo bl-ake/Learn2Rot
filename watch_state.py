@@ -33,7 +33,7 @@ DEFAULT_PREFS: dict[str, Any] = {
     "system_media_poll_ms": 500,
     "auto_resume_on_budget": False,
     "show_menubar_watch_time": True,
-    "max_budget_seconds": 600,
+    "max_budget_seconds": 0,
     "quit_with_anki": True,
     "enforce": True,
 }
@@ -64,7 +64,12 @@ def format_seconds(total_seconds: int) -> str:
 
 
 def _clamp_budget(value: int, max_budget: int) -> int:
-    return max(0, min(int(value), max(1, int(max_budget))))
+    """Clamp budget to [0, max_budget]. max_budget <= 0 means unlimited."""
+    value = max(0, int(value))
+    max_budget = int(max_budget)
+    if max_budget <= 0:
+        return value
+    return min(value, max_budget)
 
 
 def normalize_prefs(raw: Any) -> dict[str, Any]:
@@ -85,8 +90,8 @@ def normalize_prefs(raw: Any) -> dict[str, Any]:
     try:
         max_budget = int(raw.get("max_budget_seconds", prefs["max_budget_seconds"]))
     except (TypeError, ValueError):
-        max_budget = 600
-    prefs["max_budget_seconds"] = max(1, max_budget)
+        max_budget = 0
+    prefs["max_budget_seconds"] = max(0, max_budget)
     prefs["quit_with_anki"] = bool(raw.get("quit_with_anki", prefs["quit_with_anki"]))
     prefs["enforce"] = bool(raw.get("enforce", prefs["enforce"]))
     return prefs
@@ -255,7 +260,7 @@ def prefs_from_config(config: dict[str, Any], *, enforce: bool) -> dict[str, Any
             "system_media_poll_ms": config.get("system_media_poll_ms", 500),
             "auto_resume_on_budget": config.get("auto_resume_on_budget", False),
             "show_menubar_watch_time": config.get("show_menubar_watch_time", True),
-            "max_budget_seconds": config.get("max_budget_seconds", 600),
+            "max_budget_seconds": config.get("max_budget_seconds", 0),
             "quit_with_anki": config.get("quit_with_anki", True),
             "enforce": enforce,
         }

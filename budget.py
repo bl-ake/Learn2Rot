@@ -51,7 +51,11 @@ class BudgetManager:
     def add_seconds(self, amount: int) -> None:
         if amount <= 0:
             return
-        self.seconds = min(self._seconds + amount, self._max_budget_seconds())
+        cap = self._max_budget_seconds()
+        if cap <= 0:
+            self.seconds = self._seconds + amount
+        else:
+            self.seconds = min(self._seconds + amount, cap)
 
     def subtract_seconds(self, amount: int) -> None:
         if amount <= 0:
@@ -72,10 +76,19 @@ class BudgetManager:
         return get_config(self._addon_module)
 
     def _max_budget_seconds(self) -> int:
-        return max(1, int(self._config().get("max_budget_seconds", 600)))
+        """Return the budget cap in seconds. 0 means unlimited."""
+        try:
+            value = int(self._config().get("max_budget_seconds", 0))
+        except (TypeError, ValueError):
+            value = 0
+        return max(0, value)
 
     def _clamp(self, value: int) -> int:
-        return max(0, min(int(value), self._max_budget_seconds()))
+        value = max(0, int(value))
+        cap = self._max_budget_seconds()
+        if cap <= 0:
+            return value
+        return min(value, cap)
 
     def _notify(self) -> None:
         if self._on_change:
