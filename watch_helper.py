@@ -14,6 +14,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import base64
 import os
 import sys
 import threading
@@ -274,25 +275,69 @@ class _DarwinShell:
         sys.exit(0)
 
 
-def _make_tray_icon_image() -> Any:
-    """Small solid icon for pystray (no bundled asset required)."""
-    from PIL import Image, ImageDraw
+# Pre-baked multi-size ICO (16/32/64). pystray only needs an object with save().
+# Avoids bundling Pillow (~14MB of native wheels) just for a tray glyph.
+_TRAY_ICO_B64 = (
+    "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"
+)
+_TRAY_ICO_BYTES = base64.b64decode(_TRAY_ICO_B64)
 
-    size = 64
-    image = Image.new("RGBA", (size, size), (0, 0, 0, 0))
-    draw = ImageDraw.Draw(image)
-    margin = 8
-    draw.ellipse(
-        [margin, margin, size - margin, size - margin],
-        fill=(40, 40, 40, 255),
-        outline=(220, 220, 220, 255),
-        width=3,
-    )
-    # Simple clock hands
-    cx = cy = size // 2
-    draw.line([(cx, cy), (cx, margin + 14)], fill=(220, 220, 220, 255), width=3)
-    draw.line([(cx, cy), (cx + 14, cy + 6)], fill=(220, 220, 220, 255), width=3)
-    return image
+
+class _StaticIcoImage:
+    """Minimal stand-in for PIL.Image so pystray can write an ICO file."""
+
+    def save(self, fp: Any, format: str | None = None, **_kwargs: Any) -> None:
+        del format  # pystray always requests ICO on Windows
+        fp.write(_TRAY_ICO_BYTES)
+
+
+def _make_tray_icon_image() -> Any:
+    """Tray icon for pystray without a Pillow dependency."""
+    return _StaticIcoImage()
 
 
 class _WindowsShell:

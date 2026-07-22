@@ -160,7 +160,6 @@ def fetch_target(tag: str, pip_platform: str, requirements_name: str, needs_rump
             platform=pip_platform,
             packages=[
                 "pymunk>=7.0,<8",
-                "Pillow>=10.0.0",
                 "winrt-runtime>=3.0",
                 "winrt-Windows.Foundation>=3.0",
                 "winrt-Windows.Media.Control>=3.0",

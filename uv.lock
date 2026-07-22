@@ -103,7 +103,6 @@ name = "learn2rot"
 version = "0.6.0"
 source = { virtual = "." }
 dependencies = [
-    { name = "pillow", marker = "sys_platform == 'win32'" },
     { name = "pymunk" },
     { name = "pystray", marker = "sys_platform == 'win32'" },
     { name = "pytest" },
@@ -115,7 +114,6 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
-    { name = "pillow", marker = "sys_platform == 'win32'", specifier = ">=10.0.0" },
     { name = "pymunk", specifier = ">=7.0,<8" },
     { name = "pystray", marker = "sys_platform == 'win32'", specifier = ">=0.19.0" },
     { name = "pytest", specifier = ">=8.0" },

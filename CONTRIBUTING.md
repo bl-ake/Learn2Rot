@@ -45,7 +45,7 @@ Budget overlay physics needs [pymunk](https://www.pymunk.org/).
 Anki Media Timer (menu bar / tray + system media lockout) needs platform packages:
 
 - **macOS:** [rumps](https://github.com/jaredks/rumps) (and PyObjC)
-- **Windows:** [pystray](https://github.com/moses-palmer/pystray), Pillow, and [PyWinRT](https://github.com/pywinrt/pywinrt) SMTC bindings (`winrt-Windows.Media.Control`, etc.)
+- **Windows:** [pystray](https://github.com/moses-palmer/pystray) and [PyWinRT](https://github.com/pywinrt/pywinrt) SMTC bindings (`winrt-Windows.Media.Control`, etc.)
 
 Release packages ship **all** supported platform trees in one `.ankiaddon`:
 

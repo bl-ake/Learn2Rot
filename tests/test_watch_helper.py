@@ -97,3 +97,13 @@ def test_engine_quit_on_exit_sentinel(tmp_path) -> None:
     engine = watch_helper.MediaTimerEngine(path, media=_FakeMedia())
     should_quit, _label, _show = engine.tick()
     assert should_quit is True
+
+
+def test_tray_icon_image_writes_ico_without_pillow(tmp_path) -> None:
+    image = watch_helper._make_tray_icon_image()
+    out = tmp_path / "tray.ico"
+    with out.open("wb") as handle:
+        image.save(handle, format="ICO")
+    data = out.read_bytes()
+    assert data[:4] == b"\x00\x00\x01\x00"  # ICO header
+    assert len(data) == len(watch_helper._TRAY_ICO_BYTES)
