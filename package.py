@@ -150,16 +150,17 @@ def build_package(
         _save_manifest(manifest)
 
     files = collect_package_files()
-    missing = [name for name in REQUIRED_PATHS if name not in {str(p) for p in files}]
+    packaged = {p.as_posix() for p in files}
+    missing = [name for name in REQUIRED_PATHS if name not in packaged]
     if missing:
         raise SystemExit(f"Package is missing required files: {', '.join(missing)}")
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
     with zipfile.ZipFile(output_path, "w", compression=zipfile.ZIP_DEFLATED) as archive:
         for relative in files:
-            archive.write(ADDON_DIR / relative, arcname=str(relative))
+            archive.write(ADDON_DIR / relative, arcname=relative.as_posix())
 
-    return [str(path) for path in files]
+    return [path.as_posix() for path in files]
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -192,13 +193,14 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.check:
         files = collect_package_files()
-        missing = [name for name in REQUIRED_PATHS if name not in {str(p) for p in files}]
+        packaged = {p.as_posix() for p in files}
+        missing = [name for name in REQUIRED_PATHS if name not in packaged]
         if missing:
             print(f"Missing required files: {', '.join(missing)}", file=sys.stderr)
             return 1
         print(f"Would package {len(files)} file(s) (version {human_version}):")
-        for name in files:
-            print(f"  {name}")
+        for path in files:
+            print(f"  {path.as_posix()}")
         return 0
 
     files = build_package(
