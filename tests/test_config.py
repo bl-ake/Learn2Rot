@@ -20,7 +20,7 @@ def test_get_config_merges_defaults(mock_mw) -> None:
     assert config["config_version"] == config_mod.DEFAULTS["config_version"]
     assert config["media_mode"] == config_mod.MEDIA_MODE_SYSTEM
     assert config["auto_resume_on_budget"] is False
-    assert config["show_budget_cubes"] is True
+    assert config["show_budget_cubes"] is False
     assert config["cube_bounds_left_pct"] == 0
     assert config["cube_bounds_right_pct"] == 100
     assert config["show_overlay_timer"] is True
@@ -74,7 +74,7 @@ def test_preference_defaults_subset() -> None:
     assert "seconds_per_card" in defaults
     assert "media_mode" in defaults
     assert "auto_resume_on_budget" in defaults
-    assert defaults["show_budget_cubes"] is True
+    assert defaults["show_budget_cubes"] is False
     assert defaults["cube_bounds_left_pct"] == 0
     assert defaults["cube_bounds_right_pct"] == 100
     assert defaults["show_overlay_timer"] is True
@@ -89,7 +89,7 @@ def test_migrate_config_normalizes_show_budget_cubes() -> None:
     migrated = config_mod.migrate_config({"show_budget_cubes": 0})
     assert migrated["show_budget_cubes"] is False
     migrated2 = config_mod.migrate_config({})
-    assert migrated2["show_budget_cubes"] is True
+    assert migrated2["show_budget_cubes"] is False
 
 
 def test_migrate_config_normalizes_cube_bounds() -> None:

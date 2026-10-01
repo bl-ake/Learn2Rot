@@ -20,7 +20,7 @@ These keys can be changed in **Tools → Learn2Rot → Settings...** or edited h
                         ·| `show_dock_in_review_only` | `false` | Hide the dock outside review mode |
 | `media_mode` | `"system"` | `"system"` (macOS Now Playing / Windows SMTC) or `"youtube"` (legacy embedded player) |
 | `auto_resume_on_budget` | `false` | Auto-resume media when budget is restored after exhaustion |
-| `show_budget_cubes` | `true` | Show falling budget cubes over the Anki window |
+| `show_budget_cubes` | `false` | Show falling budget cubes over the Anki window |
 | `cube_bounds_left_pct` | `0` | Left edge of cube drop range as % of window width (0–100) |
 | `cube_bounds_right_pct` | `100` | Right edge of cube drop range as % of window width (0–100) |
 | `show_overlay_timer` | `true` | Show the **Watch:** countdown in the top-left of the Anki window |

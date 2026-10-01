@@ -78,7 +78,7 @@ DEFAULTS: dict[str, Any] = {
     "debug_logging": False,
     "media_mode": MEDIA_MODE_SYSTEM,
     "auto_resume_on_budget": False,
-    "show_budget_cubes": True,
+    "show_budget_cubes": False,
     "cube_bounds_left_pct": 0,
     "cube_bounds_right_pct": 100,
     "show_overlay_timer": True,
@@ -133,7 +133,7 @@ def migrate_config(config: dict[str, Any]) -> dict[str, Any]:
         bool(config.get("open_timer_at_login", False)) or config["sentinel_at_login"]
     )
     config["auto_resume_on_budget"] = bool(config.get("auto_resume_on_budget", False))
-    config["show_budget_cubes"] = bool(config.get("show_budget_cubes", True))
+    config["show_budget_cubes"] = bool(config.get("show_budget_cubes", False))
     config["show_overlay_timer"] = bool(config.get("show_overlay_timer", True))
     if "show_menubar_watch_time" not in config and "show_toolbar_watch_time" in config:
         config["show_menubar_watch_time"] = config.pop("show_toolbar_watch_time")

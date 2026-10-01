@@ -202,10 +202,10 @@ class ConfigDialog(QDialog):
         form.addRow(_menubar_watch_time_form_label(), self.show_menubar_watch_time)
 
         self.show_budget_cubes = QCheckBox(
-            "Show falling budget cubes over the Anki window (default on)"
+            "Show falling budget cubes over the Anki window (default off)"
         )
         self.show_budget_cubes.setChecked(
-            bool(config.get("show_budget_cubes", True))
+            bool(config.get("show_budget_cubes", False))
         )
         form.addRow("Budget cubes:", self.show_budget_cubes)
 

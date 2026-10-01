@@ -13,7 +13,7 @@
     "debug_logging": false,
     "media_mode": "system",
     "auto_resume_on_budget": false,
-    "show_budget_cubes": true,
+    "show_budget_cubes": false,
     "cube_bounds_left_pct": 0,
     "cube_bounds_right_pct": 100,
     "show_overlay_timer": true,

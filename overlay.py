@@ -1027,7 +1027,7 @@ class BudgetOverlayController:
     def cubes_enabled(self) -> bool:
         from .config import get_config
 
-        return bool(get_config(self._addon_module).get("show_budget_cubes", True))
+        return bool(get_config(self._addon_module).get("show_budget_cubes", False))
 
     def timer_enabled(self) -> bool:
         from .config import get_config
