@@ -10,6 +10,7 @@ from typing import Any
 from aqt import mw
 
 from ._version import __version__  # noqa: F401 — exposed for packaging
+from .watch_state import WEEKDAYS, normalize_hhmm, normalize_on_days
 
 CONFIG_VERSION = 4
 
@@ -37,6 +38,14 @@ PREFERENCE_KEYS = frozenset(
         "cube_bounds_right_pct",
         "show_overlay_timer",
         "system_media_poll_ms",
+        "sentinel_at_login",
+        "open_timer_at_login",
+        "sentinel_poll_ms",
+        "require_cards_due",
+        "sentinel_on_hours_enabled",
+        "sentinel_on_hours_start",
+        "sentinel_on_hours_end",
+        "sentinel_on_days",
     }
 )
 
@@ -74,6 +83,14 @@ DEFAULTS: dict[str, Any] = {
     "cube_bounds_right_pct": 100,
     "show_overlay_timer": True,
     "system_media_poll_ms": 500,
+    "sentinel_at_login": False,
+    "open_timer_at_login": False,
+    "sentinel_poll_ms": 3000,
+    "require_cards_due": False,
+    "sentinel_on_hours_enabled": False,
+    "sentinel_on_hours_start": "09:00",
+    "sentinel_on_hours_end": "21:00",
+    "sentinel_on_days": list(WEEKDAYS),
 }
 
 
@@ -102,6 +119,19 @@ def migrate_config(config: dict[str, Any]) -> dict[str, Any]:
     except (TypeError, ValueError):
         poll_ms = 500
     config["system_media_poll_ms"] = max(200, min(5000, poll_ms))
+    try:
+        sentinel_poll_ms = int(config.get("sentinel_poll_ms", 3000))
+    except (TypeError, ValueError):
+        sentinel_poll_ms = 3000
+    # Wider/slower range than the helper: the sentinel idles for hours between
+    # login and the first playback, so polling cheaply matters more than latency.
+    config["sentinel_poll_ms"] = max(1000, min(60000, sentinel_poll_ms))
+    config["sentinel_at_login"] = bool(config.get("sentinel_at_login", False))
+    # Persisting in the background implies opening at login too — a watcher
+    # that stays resident but never shows itself right away isn't useful.
+    config["open_timer_at_login"] = (
+        bool(config.get("open_timer_at_login", False)) or config["sentinel_at_login"]
+    )
     config["auto_resume_on_budget"] = bool(config.get("auto_resume_on_budget", False))
     config["show_budget_cubes"] = bool(config.get("show_budget_cubes", True))
     config["show_overlay_timer"] = bool(config.get("show_overlay_timer", True))
@@ -113,6 +143,17 @@ def migrate_config(config: dict[str, Any]) -> dict[str, Any]:
         config.get("show_menubar_watch_time", True)
     )
     config["quit_with_anki"] = bool(config.get("quit_with_anki", True))
+    config["require_cards_due"] = bool(config.get("require_cards_due", False))
+    config["sentinel_on_hours_enabled"] = bool(
+        config.get("sentinel_on_hours_enabled", False)
+    )
+    config["sentinel_on_hours_start"] = (
+        normalize_hhmm(config.get("sentinel_on_hours_start", "09:00")) or "09:00"
+    )
+    config["sentinel_on_hours_end"] = (
+        normalize_hhmm(config.get("sentinel_on_hours_end", "21:00")) or "21:00"
+    )
+    config["sentinel_on_days"] = normalize_on_days(config.get("sentinel_on_days"))
     config["cube_bounds_left_pct"], config["cube_bounds_right_pct"] = (
         normalize_cube_bounds_pct(
             config.get("cube_bounds_left_pct", 0),

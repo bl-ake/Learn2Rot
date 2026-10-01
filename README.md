@@ -53,9 +53,24 @@ python package.py --no-update-mod
 
 A small **Watch:** timer in the review overlay (top-left) shows time remaining. On macOS and Windows, the same countdown appears in the menu bar (macOS) or system tray (Windows) by default via **Anki Media Timer**, a background helper that also owns budget drain and pause enforcement (toggle the icon in Settings). Optionally keep it running after Anki quits (**Quit with Anki** off) so media stays locked out until you earn more time.
 
+### Only when cards are due (off by default)
+
+Turn on **Only when cards are due** and it changes what happens once your banked time runs out — not before. Budget still counts down normally either way; but if it hits zero while you have nothing left to review, locking media would just strand you, so Anki Media Timer backs off instead — no pausing, icon hidden — until cards are due again. It checks again right after you answer a card, undo one, or sync, and otherwise about once a minute, so it comes back on its own once cards are due (the next day, or once a learning card's timer elapses) without needing to reopen Anki. Only Anki can query the collection, so while it's closed the helper instead relies on Anki's last prediction of when the next card would become due (day rollover or a learning card) recorded just before it closed — enforcement resumes automatically once that time passes, even without reopening Anki.
+
+### Login settings (both off by default)
+
+**Quit with Anki** only covers the stretch after you close Anki — reboot and nothing is watching until you open it again. Two settings close that gap, both registering a small per-user login item (a LaunchAgent on macOS, a `Run` entry on Windows):
+
+- **Open at login** opens Anki Media Timer the moment you log in — countdown, budget drain and pause enforcement start right away, without waiting for anything to play. On its own, the login item runs once and exits, so a later quit (or running out of budget) stays quit until your next login — there's nothing left resident to revive it.
+- **Persist in background** keeps that login item running afterward instead of exiting, so it revives Anki Media Timer whenever media starts — including after you quit it, or if you never open Anki at all. Turning this on also turns on **Open at login**, since a watcher that stays running but never shows itself right away isn't very useful.
+
+Turning both off removes the login item entirely. While Anki is running, Anki owns the timer so you never get two running at once. What the watcher does is appended to `learn2rot_sentinel.log` in your Anki profile folder.
+
+**Restrict to hours** sets a daily window (e.g. 09:00–21:00, or overnight ranges like 22:00–06:00), plus which days of the week it applies on — and works whether or not Persist in background is on. Outside the window (or on an unchecked day), Anki Media Timer backs off exactly like it does when no cards are due: no pausing, icon hidden, budget left untouched — even for a timer that's already running — and it picks back up on its own once the window reopens, no restart needed. With **Persist in background** also on, the watcher keeps running the whole time too, but won't revive the timer outside the window, so quitting it there stays quit, even once media starts playing again, until the window opens or you reopen Anki yourself. Day checks use the calendar day the moment falls on, so an overnight window can cut off at midnight if the next day isn't also checked. Unchecking every day backs off entirely while leaving the watcher itself running.
+
 ## Debug logging
 
-Enable **Debug logging** in settings, then check **Tools → Learn2Rot → View Debug Log**. The log file lives in your Anki profile folder as `learn2rot.log`.
+Enable **Debug logging** on the **Advanced** tab of Settings, then use its **View Log** / **Clear Log** buttons. The log file lives in your Anki profile folder as `learn2rot.log`.
 
 ## Contributing
 

@@ -36,6 +36,8 @@ REQUIRED_PATHS = (
     "config.json",
     "web/player.html",
     "vendor_paths.py",
+    "watch_helper.py",
+    "watch_sentinel.py",
 )
 
 REQUIRED_ADDON_JSON_KEYS = (

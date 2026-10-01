@@ -19,6 +19,7 @@ from typing import Callable, Optional
 from aqt import mw
 from aqt.qt import QTimer
 
+from . import autostart
 from .config import get_config, is_system_media_mode, write_config
 from .logger import log, log_exception
 from .watch_state import (
@@ -38,6 +39,11 @@ _controller: Optional["WatchDaemonController"] = None
 
 _HELPER_NAME = "watch_helper.py"
 _POLL_MS = 1000
+# cards_due only changes on review/sync/undo (handled explicitly by callers)
+# or when time passes a day rollover / a learning card's interval elapses —
+# neither needs sub-minute precision, so this rides the existing 1s poll
+# timer via a tick counter instead of adding another QTimer.
+_CARDS_DUE_CHECK_EVERY_TICKS = 60
 
 
 def set_addon_module(module: str) -> None:
@@ -73,6 +79,11 @@ def _state_path() -> Path:
     return Path(folder) / STATE_FILENAME
 
 
+def state_path() -> Path:
+    """Shared state file path (also used by the login sentinel)."""
+    return _state_path()
+
+
 def _helper_script() -> Path:
     return Path(__file__).resolve().parent / _HELPER_NAME
 
@@ -97,11 +108,48 @@ def _is_packaged_anki_executable(executable: str) -> bool:
 
 
 def _helper_python() -> Optional[str]:
-    """Return a Python executable safe for running watch_helper.py, or None."""
+    """Return a Python executable safe for running watch_helper.py, or None.
+
+    Packaged Anki's ``sys.executable`` is Anki itself (not a Python CLI), so
+    spawning ``watch_helper.py`` with it would reopen Anki as a deck. Fall
+    back to the same AnkiProgramFiles / PATH discovery the login sentinel
+    uses so macOS can still restart the menubar timer after it dies.
+    """
     executable = sys.executable
-    if not executable or _is_packaged_anki_executable(executable):
+    if executable and not _is_packaged_anki_executable(executable):
+        return executable
+    return autostart.resolve_launch_python(executable=executable)
+
+
+def _compute_cards_due() -> Optional[tuple[bool, int]]:
+    """(anything due now, unix time of the next predicted due card).
+
+    ``due`` mirrors the deck list's own due counts (respects deck limits,
+    filtered decks, etc.) via the same aggregated tree Anki's UI reads from.
+    The predicted time is collection-wide, not tied to whichever deck happens
+    to be selected: the sooner of the next learning-queue card's absolute due
+    time (``queue = 1`` cards carry one directly) and the next day rollover,
+    when new-card limits reset and review cards become due — the same cutoff
+    ``col.sched.day_cutoff`` exposes. It lets the helper tell a still-valid
+    "not due" apart from one that's gone stale once Anki closes and nothing
+    is left to recompute it. Returns None if it can't be determined (no
+    collection open, backend error) so callers can leave the last-known
+    values alone rather than guessing.
+    """
+    try:
+        col = mw.col
+        if col is None:
+            return None
+        tree = col.sched.deck_due_tree()
+        due = bool(tree.new_count or tree.learn_count or tree.review_count)
+        next_learn = col.db.scalar("select min(due) from cards where queue = 1")
+        day_cutoff = int(col.sched.day_cutoff)
+        candidates = [c for c in (next_learn, day_cutoff) if c]
+        next_due_at = min(candidates) if candidates else 0
+        return due, next_due_at
+    except Exception:
+        log_exception("watch_daemon: cards-due check failed")
         return None
-    return executable
 
 
 def _should_run_daemon() -> bool:
@@ -124,6 +172,9 @@ class WatchDaemonController:
         self._inproc = False
         self._last_seconds: Optional[int] = None
         self._last_playing: Optional[bool] = None
+        self._poll_tick_count = 0
+        self._last_cards_due: Optional[bool] = None
+        self._last_cards_due_at: Optional[int] = None
         self._poll_timer = QTimer()
         self._poll_timer.setInterval(_POLL_MS)
         self._poll_timer.timeout.connect(self._on_poll)
@@ -148,6 +199,7 @@ class WatchDaemonController:
         self._ensure_helper(force=force)
         if not self._poll_timer.isActive():
             self._poll_timer.start()
+        self._refresh_cards_due()
         self._on_poll()
 
     def credit(self, seconds: int) -> None:
@@ -220,6 +272,7 @@ class WatchDaemonController:
 
         def mark_anki_gone(state: dict) -> None:
             state["anki_alive"] = False
+            state["anki_pid"] = 0
 
         try:
             update_state(_state_path(), mark_anki_gone)
@@ -258,6 +311,9 @@ class WatchDaemonController:
                 state["budget_seconds"] = max(0, int(budget_seconds))
             state["prefs"] = prefs
             state["anki_alive"] = anki_alive
+            # Lets the login sentinel tell "Anki owns the helper" apart from a
+            # stale anki_alive left behind by a crash.
+            state["anki_pid"] = os.getpid() if anki_alive else 0
             state["exit"] = False
             state["label"] = format_seconds(int(state.get("budget_seconds", 0) or 0))
 
@@ -271,9 +327,42 @@ class WatchDaemonController:
         except OSError:
             log_exception("watch_daemon: failed pushing prefs")
 
+    def _refresh_cards_due(self) -> None:
+        """Push cards_due (+ its next-due prediction) when either changes.
+
+        No-op unless require_cards_due is on, so nobody else pays for this
+        (no scheduler query, no state write) unless they opted in.
+        """
+        if not _addon_module:
+            return
+        config = get_config(_addon_module)
+        if not bool(config.get("require_cards_due", False)):
+            return
+        result = _compute_cards_due()
+        if result is None:
+            return
+        due, due_at = result
+        if due == self._last_cards_due and due_at == self._last_cards_due_at:
+            return
+        self._last_cards_due = due
+        self._last_cards_due_at = due_at
+
+        def mutator(state: dict) -> None:
+            state["cards_due"] = due
+            state["cards_due_at"] = due_at
+
+        try:
+            update_state(_state_path(), mutator)
+            log(f"watch_daemon: cards_due={due} cards_due_at={due_at}")
+        except OSError:
+            log_exception("watch_daemon: failed pushing cards_due")
+
     def _on_poll(self) -> None:
         if not _should_run_daemon():
             return
+        self._poll_tick_count += 1
+        if self._poll_tick_count % _CARDS_DUE_CHECK_EVERY_TICKS == 1:
+            self._refresh_cards_due()
         try:
             state = read_state(_state_path())
         except OSError:
@@ -358,9 +447,14 @@ class WatchDaemonController:
             if not env.get("PYTHONPATH")
             else os.pathsep.join(path_parts) + os.pathsep + env["PYTHONPATH"]
         )
+        named_python = autostart.ensure_named_launcher(
+            python,
+            name=autostart.HELPER_PROCESS_NAME,
+            directory=state_path.parent / autostart.LAUNCHERS_DIRNAME,
+        )
         log_file = None
         popen_kwargs: dict = {
-            "args": [python, str(script), "--state", str(state_path)],
+            "args": [named_python, str(script), "--state", str(state_path)],
             "env": env,
             "stdout": subprocess.DEVNULL,
             "stderr": subprocess.DEVNULL,
@@ -469,6 +563,22 @@ def start_watch_daemon(*, budget_seconds: int, force: bool = False) -> None:
         _get_controller().start(budget_seconds=budget_seconds, force=force)
     except Exception:
         log_exception("watch_daemon: start_watch_daemon failed")
+
+
+def refresh_cards_due() -> None:
+    """Recheck cards_due now instead of waiting for the next poll tick.
+
+    Called after events that can change what's due (answering a card,
+    undoing one, or syncing in reviews from another device) so the icon
+    hides/reappears right away rather than up to a minute late. A no-op if
+    the daemon was never started — nothing to push into yet.
+    """
+    if not _supports_watch_daemon() or _controller is None:
+        return
+    try:
+        _controller._refresh_cards_due()
+    except Exception:
+        log_exception("watch_daemon: refresh_cards_due failed")
 
 
 def credit_watch_time(seconds: int) -> None:

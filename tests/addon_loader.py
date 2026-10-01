@@ -32,6 +32,10 @@ def _ensure_aqt_mock() -> MagicMock:
     mw.serverURL.return_value = "http://127.0.0.1:12345/"
     mw.addonManager.addonFromModule.return_value = "Learn2Rot"
     mw.taskman.run_on_main.side_effect = lambda fn: fn()
+    # cards_due_at inputs: real ints (not MagicMocks) so int()/min() on them
+    # doesn't blow up; tests that care about a specific value override these.
+    mw.col.sched.day_cutoff = 0
+    mw.col.db.scalar.return_value = None
 
     aqt = ModuleType("aqt")
     aqt.mw = mw

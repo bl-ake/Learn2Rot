@@ -17,5 +17,13 @@
     "cube_bounds_left_pct": 0,
     "cube_bounds_right_pct": 100,
     "show_overlay_timer": true,
-    "system_media_poll_ms": 500
+    "system_media_poll_ms": 500,
+    "sentinel_at_login": false,
+    "open_timer_at_login": false,
+    "sentinel_poll_ms": 3000,
+    "require_cards_due": false,
+    "sentinel_on_hours_enabled": false,
+    "sentinel_on_hours_start": "09:00",
+    "sentinel_on_hours_end": "21:00",
+    "sentinel_on_days": ["mon", "tue", "wed", "thu", "fri", "sat", "sun"]
 }

@@ -20,7 +20,7 @@ import sys
 import threading
 import time
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Callable, Optional
 
 _ROOT = Path(__file__).resolve().parent
 if str(_ROOT) not in sys.path:
@@ -36,10 +36,13 @@ if _VENDOR is not None:
 
 from media_control import MediaController, create_media_controller  # noqa: E402
 from watch_state import (  # noqa: E402
+    WEEKDAYS,
     apply_pending_adjustments,
     default_state,
     drain_one_second,
     format_seconds,
+    is_on_day,
+    is_within_on_hours,
     read_state,
     update_state,
     write_exit,
@@ -58,11 +61,13 @@ class MediaTimerEngine:
         self,
         state_path: Path,
         media: Optional[MediaController] = None,
+        now_provider: Callable[[], time.struct_time] = time.localtime,
     ) -> None:
         self._state_path = state_path
         self._media = media or create_media_controller()
         self._last_drain_mono = 0.0
         self._paused_for_budget = False
+        self._now_provider = now_provider
 
     def publish_pid(self) -> None:
         pid = os.getpid()
@@ -90,27 +95,76 @@ class MediaTimerEngine:
 
         prefs = snapshot.get("prefs") or {}
         enforce = bool(prefs.get("enforce", True))
-        show_icon = bool(prefs.get("show_menubar_watch_time", True))
+        # Only Anki can compute cards_due (needs collection access); it pushes
+        # the value here. require_cards_due off (the default) makes gate_active
+        # always False, so behavior is unchanged for everyone who hasn't
+        # turned the setting on. Even when on, this only changes what happens
+        # once budget actually reaches zero — banked time still counts down
+        # normally either way, so nothing changes the instant cards stop
+        # being due.
+        require_due = bool(prefs.get("require_cards_due", False))
+        cards_due = bool(snapshot.get("cards_due", True))
+        if not cards_due and not snapshot.get("anki_alive", False):
+            # Nothing is refreshing cards_due while Anki is closed. Anki
+            # records when it expects the next card to become due (day
+            # rollover or a learning-queue card); once that time has passed,
+            # a leftover False is stale rather than still accurate, so stop
+            # trusting it. No recorded time at all is treated the same way.
+            due_at = int(snapshot.get("cards_due_at", 0) or 0)
+            if due_at <= 0 or time.time() >= due_at:
+                cards_due = True
+        gate_active = require_due and not cards_due
+        show_menubar = bool(prefs.get("show_menubar_watch_time", True))
         auto_resume = bool(prefs.get("auto_resume_on_budget", False))
         was_paused = bool(snapshot.get("paused_for_budget", False)) or (
             self._paused_for_budget
         )
+        # Unlike require_cards_due, this applies for the whole window, not
+        # just once budget hits zero — outside on-hours the timer backs off
+        # entirely (no drain, no pause, icon hidden), and picks back up on
+        # its own the next tick once the window reopens. Computed locally
+        # from the system clock, so it works even with Anki closed.
+        in_on_hours = self._in_on_hours(prefs)
 
         self._tick_locked(
-            enforce=enforce,
+            enforce=enforce and in_on_hours,
             auto_resume=auto_resume,
             was_paused=was_paused,
+            gate_active=gate_active,
         )
 
         try:
             latest = read_state(self._state_path)
         except OSError:
-            return False, _DEFAULT_LABEL, show_icon
+            return False, _DEFAULT_LABEL, show_menubar and in_on_hours
         label = str(latest.get("label") or _DEFAULT_LABEL)
+        # Nothing left to show/lock once we've backed off at zero — there's
+        # no countdown running and no lockout to indicate.
+        backed_off = gate_active and int(latest.get("budget_seconds", 0) or 0) <= 0
+        show_icon = show_menubar and in_on_hours and not backed_off
         return False, label, show_icon
 
+    def _in_on_hours(self, prefs: dict) -> bool:
+        if not bool(prefs.get("on_hours_enabled", False)):
+            return True
+        start = prefs.get("on_hours_start")
+        end = prefs.get("on_hours_end")
+        if not start or not end:
+            return True
+        now = self._now_provider()
+        on_days = prefs.get("on_days") or list(WEEKDAYS)
+        if not is_on_day(now.tm_wday, on_days):
+            return False
+        now_minutes = now.tm_hour * 60 + now.tm_min
+        return is_within_on_hours(now_minutes, start, end)
+
     def _tick_locked(
-        self, *, enforce: bool, auto_resume: bool, was_paused: bool
+        self,
+        *,
+        enforce: bool,
+        auto_resume: bool,
+        was_paused: bool,
+        gate_active: bool = False,
     ) -> None:
         def mutator(current: dict) -> None:
             before_budget = int(current.get("budget_seconds", 0) or 0)
@@ -144,11 +198,18 @@ class MediaTimerEngine:
                 playing = True
 
             if budget <= 0:
-                self._paused_for_budget = True
-                current["paused_for_budget"] = True
-                if info.supported:
-                    self._media.pause()
-                playing = False
+                if gate_active:
+                    # Nothing due to review means no way to earn more time —
+                    # locking media would just strand the user, so leave
+                    # playback alone instead of pausing it.
+                    self._paused_for_budget = False
+                    current["paused_for_budget"] = False
+                else:
+                    self._paused_for_budget = True
+                    current["paused_for_budget"] = True
+                    if info.supported:
+                        self._media.pause()
+                    playing = False
                 self._last_drain_mono = 0.0
             elif playing:
                 self._paused_for_budget = False
@@ -162,10 +223,14 @@ class MediaTimerEngine:
                     current["budget_seconds"] = budget
                     self._last_drain_mono = now
                     if not has_time:
-                        self._paused_for_budget = True
-                        current["paused_for_budget"] = True
-                        self._media.pause()
-                        playing = False
+                        if gate_active:
+                            self._paused_for_budget = False
+                            current["paused_for_budget"] = False
+                        else:
+                            self._paused_for_budget = True
+                            current["paused_for_budget"] = True
+                            self._media.pause()
+                            playing = False
             else:
                 self._last_drain_mono = 0.0
                 current["paused_for_budget"] = bool(self._paused_for_budget)
@@ -173,9 +238,14 @@ class MediaTimerEngine:
             current["budget_seconds"] = max(
                 0, int(current.get("budget_seconds", budget))
             )
-            current["is_playing"] = bool(
-                playing and current["budget_seconds"] > 0
-            )
+            if gate_active and current["budget_seconds"] <= 0:
+                # Backed off: we're not the one controlling playback anymore,
+                # so report what's actually happening instead of forcing False.
+                current["is_playing"] = bool(playing)
+            else:
+                current["is_playing"] = bool(
+                    playing and current["budget_seconds"] > 0
+                )
             current["label"] = format_seconds(int(current["budget_seconds"]))
 
         try:

@@ -11,7 +11,7 @@ from dataclasses import dataclass, field
 from typing import Optional, Sequence
 
 import pymunk
-from aqt import mw
+from aqt import is_mac, mw
 from aqt.qt import (
     QApplication,
     QColor,
@@ -575,6 +575,42 @@ class _OverlayInputFilter(QObject):
         return self._overlay._handle_filtered_mouse(event)
 
 
+def _raise_without_activating(widget: QWidget) -> None:
+    """Restack a top-level window without bringing Anki to the front.
+
+    On macOS, QWidget.raise_() also activates the app, which pulls Anki's
+    main window over whatever the user is working in (for example when a
+    Popup Cards review fires the answer hook). Order the native window front
+    instead, and only if it is on screen: the tool window is hidden natively
+    while Anki is inactive and must stay that way.
+    """
+    if not is_mac:
+        widget.raise_()
+        return
+    try:
+        import ctypes
+        import ctypes.util
+
+        objc = ctypes.cdll.LoadLibrary(ctypes.util.find_library("objc"))
+        objc.sel_registerName.restype = ctypes.c_void_p
+        objc.sel_registerName.argtypes = (ctypes.c_char_p,)
+
+        def send(obj, selector: str, *args, restype=ctypes.c_void_p, argtypes=()):
+            fn = ctypes.CFUNCTYPE(restype, ctypes.c_void_p, ctypes.c_void_p, *argtypes)(
+                ("objc_msgSend", objc)
+            )
+            return fn(obj, objc.sel_registerName(selector.encode()), *args)
+
+        window = send(ctypes.c_void_p(int(widget.winId())), "window")
+        if not window:
+            return
+        window = ctypes.c_void_p(window)
+        if send(window, "isVisible", restype=ctypes.c_bool):
+            send(window, "orderFront:", None, restype=None, argtypes=(ctypes.c_void_p,))
+    except Exception:
+        _log("overlay: native orderFront failed")
+
+
 class BudgetOverlay(QWidget):
     """Frameless tool window over Anki's central widget.
 
@@ -591,7 +627,10 @@ class BudgetOverlay(QWidget):
             parent,
             Qt.WindowType.Tool
             | Qt.WindowType.FramelessWindowHint
-            | Qt.WindowType.WindowDoesNotAcceptFocus,
+            | Qt.WindowType.WindowDoesNotAcceptFocus
+            # WA_TransparentForMouseEvents only affects Qt's widget dispatch;
+            # the native window still swallows clicks unless this is set.
+            | Qt.WindowType.WindowTransparentForInput,
         )
         self.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating, True)
         self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
@@ -622,7 +661,7 @@ class BudgetOverlay(QWidget):
 
         self._sync_geometry()
         self.show()
-        self.raise_()
+        _raise_without_activating(self)
         self._clock.start()
         self._timer.start()
         self._request_repaint()
@@ -706,7 +745,7 @@ class BudgetOverlay(QWidget):
         if self.world.floor_y <= 0 or self.world.floor_y > self.world.height:
             self.world.floor_y = self.world.height
         self.world.update_boundaries()
-        self.raise_()
+        _raise_without_activating(self)
         self._request_repaint()
 
     def _global_pos(self, event: QMouseEvent) -> QPoint:
@@ -1084,7 +1123,7 @@ class BudgetOverlayController:
         if self._overlay is None or not self.overlay_enabled():
             return
         self._overlay._sync_geometry()
-        self._overlay.raise_()
+        _raise_without_activating(self._overlay)
 
     def set_review_active(self, active: bool) -> None:
         if not self.overlay_enabled():

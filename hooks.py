@@ -15,7 +15,7 @@ from aqt.qt import QAction, QMenu
 from aqt.qt import QDesktopServices, QUrl
 from aqt.utils import qconnect, showInfo, tooltip
 
-from . import watch_daemon
+from . import sentinel, watch_daemon
 from .config import get_config, is_system_media_mode
 from .config_dialog import ConfigDialog
 from .logger import clear_log, log, log_exception, log_path
@@ -148,6 +148,18 @@ def open_settings() -> None:
         _sync_overlay(falling=False)
         get_overlay().ensure_raised()
         watch_daemon.refresh_watch_daemon(budget_seconds=get_budget().seconds)
+        _sync_sentinel(report_errors=True)
+
+
+def _sync_sentinel(*, report_errors: bool) -> None:
+    """Reconcile the login watcher with its preference."""
+    try:
+        result = sentinel.sync(_addon_module)
+    except Exception:
+        log_exception("sentinel: sync failed")
+        return
+    if result.error and report_errors:
+        showInfo(f"Learn2Rot: {result.error}")
 
 
 def open_debug_log() -> None:
@@ -165,10 +177,10 @@ def clear_debug_log() -> None:
     showInfo("Learn2Rot debug log cleared.")
 
 
-def _adjust_timer_for_debug(delta_seconds: int) -> None:
-    """Add or remove watch time for debugging (menu actions)."""
+def adjust_timer(delta_seconds: int, *, notify: bool = True) -> int:
+    """Add or remove watch time. Returns the actual seconds changed."""
     if delta_seconds == 0:
-        return
+        return 0
     budget = get_budget()
     before = budget.seconds
     if delta_seconds > 0:
@@ -192,15 +204,9 @@ def _adjust_timer_for_debug(delta_seconds: int) -> None:
         delta_text = f"-{format_seconds(abs(changed))}"
     message = f"Learn2Rot debug: {delta_text} → {format_seconds(after)}"
     log(message)
-    tooltip(message)
-
-
-def increment_timer() -> None:
-    _adjust_timer_for_debug(_chunk_seconds())
-
-
-def decrement_timer() -> None:
-    _adjust_timer_for_debug(-_chunk_seconds())
+    if notify:
+        tooltip(message)
+    return changed
 
 
 def on_profile_open() -> None:
@@ -216,6 +222,8 @@ def on_profile_open() -> None:
     _hydrate_overlay()
     get_overlay().set_review_active(mw.state == "review")
     watch_daemon.start_watch_daemon(budget_seconds=budget.seconds, force=True)
+    # Silent here: a login-item failure must not block opening a profile.
+    _sync_sentinel(report_errors=False)
 
 
 def on_profile_close() -> None:
@@ -266,6 +274,7 @@ def on_sync_did_finish() -> None:
             return
         get_dock().on_cards_answered(count, track_undo=False)
         _sync_overlay(falling=True)
+        watch_daemon.refresh_cards_due()
         reward_each = _chunk_seconds()
         total = reward_each * count
         card_word = "card" if count == 1 else "cards"
@@ -279,10 +288,11 @@ def on_sync_did_finish() -> None:
 
 
 def on_answer_card(reviewer, card, ease) -> None:
-    if mw.state != "review":
-        return
+    # No mw.state check: cards answered outside the main reviewer (e.g. the
+    # Popup Cards add-on) fire this hook too and should earn time.
     get_dock().on_card_answered()
     _sync_overlay(falling=True)
+    watch_daemon.refresh_cards_due()
 
 
 def _is_answer_card_undo(changes: OpChangesAfterUndo) -> bool:
@@ -297,6 +307,7 @@ def on_undo(changes: OpChangesAfterUndo) -> None:
     log(f"undo detected for answer card: {changes.operation!r}")
     get_dock().on_review_undo()
     _sync_overlay(falling=False)
+    watch_daemon.refresh_cards_due()
 
 
 def on_show_question(card) -> None:
@@ -352,24 +363,6 @@ def setup_menu() -> None:
     settings_action = QAction("Settings...", mw)
     qconnect(settings_action.triggered, open_settings)
     menu.addAction(settings_action)
-
-    menu.addSeparator()
-
-    increment_action = QAction("Increment Timer", mw)
-    qconnect(increment_action.triggered, increment_timer)
-    menu.addAction(increment_action)
-
-    decrement_action = QAction("Decrement Timer", mw)
-    qconnect(decrement_action.triggered, decrement_timer)
-    menu.addAction(decrement_action)
-
-    view_log_action = QAction("View Debug Log", mw)
-    qconnect(view_log_action.triggered, open_debug_log)
-    menu.addAction(view_log_action)
-
-    clear_log_action = QAction("Clear Debug Log", mw)
-    qconnect(clear_log_action.triggered, clear_debug_log)
-    menu.addAction(clear_log_action)
 
 
 def register_hooks() -> None:

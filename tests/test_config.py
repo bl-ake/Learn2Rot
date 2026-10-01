@@ -136,3 +136,127 @@ def test_migrate_config_renames_toolbar_key_to_menubar() -> None:
     migrated = config_mod.migrate_config({"show_toolbar_watch_time": False})
     assert migrated["show_menubar_watch_time"] is False
     assert "show_toolbar_watch_time" not in migrated
+
+
+def test_migrate_config_normalizes_sentinel_at_login() -> None:
+    config_mod = load_addon_module("config", "config.py")
+    assert config_mod.migrate_config({})["sentinel_at_login"] is False
+    assert config_mod.migrate_config({"sentinel_at_login": 1})["sentinel_at_login"] is True
+
+
+def test_migrate_config_clamps_sentinel_poll_ms() -> None:
+    config_mod = load_addon_module("config", "config.py")
+    assert config_mod.migrate_config({})["sentinel_poll_ms"] == 3000
+    assert config_mod.migrate_config({"sentinel_poll_ms": 10})["sentinel_poll_ms"] == 1000
+    assert (
+        config_mod.migrate_config({"sentinel_poll_ms": 10**6})["sentinel_poll_ms"]
+        == 60000
+    )
+    assert config_mod.migrate_config({"sentinel_poll_ms": "x"})["sentinel_poll_ms"] == 3000
+
+
+def test_sentinel_keys_are_saveable_preferences() -> None:
+    config_mod = load_addon_module("config", "config.py")
+    assert "sentinel_at_login" in config_mod.PREFERENCE_KEYS
+    assert "open_timer_at_login" in config_mod.PREFERENCE_KEYS
+    assert "sentinel_poll_ms" in config_mod.PREFERENCE_KEYS
+    assert config_mod.preference_defaults()["sentinel_at_login"] is False
+    assert config_mod.preference_defaults()["open_timer_at_login"] is False
+
+
+def test_persist_in_background_forces_open_at_login() -> None:
+    """A watcher that stays resident but never shows itself isn't useful —
+    see the matching UI wiring in config_dialog._on_persist_toggled."""
+    config_mod = load_addon_module("config", "config.py")
+    migrated = config_mod.migrate_config(
+        {"sentinel_at_login": True, "open_timer_at_login": False}
+    )
+    assert migrated["sentinel_at_login"] is True
+    assert migrated["open_timer_at_login"] is True
+
+
+def test_open_at_login_alone_does_not_force_persist() -> None:
+    """The reverse implication does not hold: opening once at login is a
+    valid standalone choice that must not silently enable the watcher."""
+    config_mod = load_addon_module("config", "config.py")
+    migrated = config_mod.migrate_config(
+        {"sentinel_at_login": False, "open_timer_at_login": True}
+    )
+    assert migrated["open_timer_at_login"] is True
+    assert migrated["sentinel_at_login"] is False
+
+
+def test_open_at_login_default_is_off() -> None:
+    config_mod = load_addon_module("config", "config.py")
+    migrated = config_mod.migrate_config({})
+    assert migrated["open_timer_at_login"] is False
+    assert migrated["sentinel_at_login"] is False
+
+
+def test_on_hours_defaults() -> None:
+    config_mod = load_addon_module("config", "config.py")
+    migrated = config_mod.migrate_config({})
+    assert migrated["sentinel_on_hours_enabled"] is False
+    assert migrated["sentinel_on_hours_start"] == "09:00"
+    assert migrated["sentinel_on_hours_end"] == "21:00"
+
+
+def test_on_hours_keys_are_saveable_preferences() -> None:
+    config_mod = load_addon_module("config", "config.py")
+    assert "sentinel_on_hours_enabled" in config_mod.PREFERENCE_KEYS
+    assert "sentinel_on_hours_start" in config_mod.PREFERENCE_KEYS
+    assert "sentinel_on_hours_end" in config_mod.PREFERENCE_KEYS
+    assert config_mod.preference_defaults()["sentinel_on_hours_enabled"] is False
+
+
+def test_migrate_config_normalizes_on_hours_enabled() -> None:
+    config_mod = load_addon_module("config", "config.py")
+    assert (
+        config_mod.migrate_config({"sentinel_on_hours_enabled": 1})[
+            "sentinel_on_hours_enabled"
+        ]
+        is True
+    )
+
+
+def test_migrate_config_normalizes_on_hours_times() -> None:
+    config_mod = load_addon_module("config", "config.py")
+    migrated = config_mod.migrate_config(
+        {"sentinel_on_hours_start": "7:5", "sentinel_on_hours_end": "22:00"}
+    )
+    assert migrated["sentinel_on_hours_start"] == "09:00"  # invalid -> default
+    assert migrated["sentinel_on_hours_end"] == "22:00"
+
+    valid = config_mod.migrate_config(
+        {"sentinel_on_hours_start": "7:05", "sentinel_on_hours_end": "23:59"}
+    )
+    assert valid["sentinel_on_hours_start"] == "07:05"
+    assert valid["sentinel_on_hours_end"] == "23:59"
+
+
+def test_on_days_default_is_every_day() -> None:
+    config_mod = load_addon_module("config", "config.py")
+    migrated = config_mod.migrate_config({})
+    assert migrated["sentinel_on_days"] == list(config_mod.WEEKDAYS)
+    assert config_mod.preference_defaults()["sentinel_on_days"] == list(
+        config_mod.WEEKDAYS
+    )
+
+
+def test_on_days_key_is_a_saveable_preference() -> None:
+    config_mod = load_addon_module("config", "config.py")
+    assert "sentinel_on_days" in config_mod.PREFERENCE_KEYS
+
+
+def test_migrate_config_normalizes_on_days() -> None:
+    config_mod = load_addon_module("config", "config.py")
+    migrated = config_mod.migrate_config(
+        {"sentinel_on_days": ["Mon", "wed", "bogus", "mon"]}
+    )
+    assert migrated["sentinel_on_days"] == ["mon", "wed"]
+
+    empty = config_mod.migrate_config({"sentinel_on_days": []})
+    assert empty["sentinel_on_days"] == []  # explicit "no days" preserved
+
+    garbage = config_mod.migrate_config({"sentinel_on_days": "mon"})
+    assert garbage["sentinel_on_days"] == list(config_mod.WEEKDAYS)
